@@ -21,37 +21,99 @@ static nvs_handle_t NVS_handle;
 
 typedef struct {
   int recv_socket;
-  void(*) dataCallback(void);
+  void(*dataCallback)(const char*);
 } ethRxLoopArg_t;
 
+// === error manager ===
+typedef struct {
+  char msg[256];
+  int errCount;  
+  SemaphoreHandle_t mutex;
+} errMan_t;
+
+static errMan_t errMan;
+void errMan_init(errMan_t* self){
+  self->errCount = 0;
+  self->mutex = xSemaphoreCreateMutex();
+}
+
+void errMan_reportError(errMan_t* self, const char* msg){
+  xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY);
+
+  if (!self->errCount) // only store first error
+    strcpy(self->msg, msg);  
+  ++self->errCount;
+
+  xSemaphoreGive(self->mutex);
+}
+
+int errMan_getError(errMan_t* self, char* dest){
+  int retVal = 0; // retval: no error
+  xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY); // --------
+  if (self->errCount){
+    strcpy(dest, self->msg);
+    retVal = self->errCount; // retval: number of logged errors since last readout
+    self->errCount = 0;
+  }
+  
+  xSemaphoreGive(self->mutex); // ---------------------------------------------
+  return retVal;
+}
+
+// === ethernet receive loop, shuts down task on disconnect ===
 static IRAM_ATTR void ethRxLoop(void* _arg){
   ethRxLoopArg_t* arg = (ethRxLoopArg_t*)_arg;
   const uint32_t nBytesMax = 255; // +1 for C string zero termination
   uint32_t nBytesBuf = 0;
-  char cmdBuf[256]; 
+  uint32_t nParsed = 0;
+  char cmdBuf[256];
+  int state = 0;
+  int overrun = 0;
   while (1){
-    for (int pass = 0; pass < 2; ++pass){
-      uint32_t nBytesNextRead = (pass == 0) ? 1 : nBytesMax - nBytesBuf;
-      uint32_t flags = (pass == 0) ? /*blocking*/ 0 : /*non-blocking*/MSG_DONTWAIT
+    int blockingRead = !(state & 0x1);
+    uint32_t nBytesNextRead = blockingRead ? 1 : nBytesMax - nBytesBuf;
+    uint32_t flags = blockingRead ? 0 : /*non-blocking*/MSG_DONTWAIT;
 
-	socklen_t socklen = sizeof(struct sockaddr_in);
-      int nRec = recvfrom(recv_socket, data, nBytes, flags, dest_addr, &socklen);
-      if (nRec < 0)
-	return 0; // DISCONNECT
-      if (nRec > nBytes){
-	ESP_LOGI(TAG, "recvfrom: excess data?!");
+    if (nBytesNextRead == 0){
+      if (!overrun){
+	errMan_reportError(&errMan, "max cmd length exceeded");
+	overrun = 1;
+      }
+      nBytesBuf = 0;
+      nBytesNextRead = blockingRead ? 1 : nBytesMax;
+    }
+    
+    int nBytesReceived = recv(arg->recv_socket, cmdBuf, nBytesNextRead, flags);
+    if (nBytesReceived < 0){ // DISCONNECT
+      close(arg->recv_socket);
+      vTaskDelete(NULL);      
+      return;
+    }
+    if (nBytesReceived > nBytesNextRead){
+      ESP_LOGI(TAG, "recvfrom: ?!excess data?!");
       ESP_ERROR_CHECK(ESP_FAIL);
     }
 
+    nBytesBuf += nBytesReceived;
+    
+    // === scan for newline \n ===
+    for (int ix = nParsed; ix < nBytesBuf; ++ix){
+      if (cmdBuf[ix] == '\n'){
+	if (overrun){
+	  // error has already been reported but we do salvage data following the newline
+	  overrun = 0;
+	} else {
+	  cmdBuf[ix] = 0; // convert newline char to C end-of-string null
+	  arg->dataCallback(cmdBuf);	  
+	}
+	
+	// move data beyond the newline char (pos: +1; length: -1) to the head of buf
+	memcpy(cmdBuf, cmdBuf+ix+1, nBytesBuf-nParsed-1);
+	nParsed -= ix;
+      }
     }
-
-    nBytes -= nRec;
-    if (!nBytes)
-      return 1; // SUCCESS
-    data += nRec;
   }
 }
-
 
 static void console_task(void *arg){
   ESP_LOGI(TAG, "console task running");
@@ -178,8 +240,7 @@ static void IRAM_ATTR send_to_tcpIp(int send_socket, struct sockaddr* dest_addr,
   }
 }
 
-void app_main(void){
-  {
+void app_main(void){{
   // === initialize NVS ===
   ESP_LOGI(TAG, "initializing NVS");
   esp_err_t err = nvs_flash_init();
