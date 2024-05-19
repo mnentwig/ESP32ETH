@@ -24,14 +24,59 @@
 
 static const char *TAG = "eth_example";
 
+static void console_task(void *arg){
+  ESP_LOGI(TAG, "console task running");
+  char buf[256];
+  const int nBytesMax = 256;
+  TickType_t delay_interval = 20 / portTICK_PERIOD_MS;
+  int nBytes = 0;
+  int prevNBytes = 0;
+  while (1){
+    const char c = fgetc(stdin);
+    if (c == 0xFF){
+      vTaskDelay(delay_interval);
+      continue;
+    }
+    if (nBytes == nBytesMax) // full buffer keeps changing last char
+      --nBytes;
+    if ((c == 0x08) && nBytes){ // backspace deletes
+      --nBytes;
+    } else if (c == 27){// ESC key
+      nBytes = 0; // clears line
+    } else if (c == '\n'){
+      fputc(c, stdout); // forward to console
+      buf[nBytes++] = 0; // C string termination
+      printf("you wrote '%s'\r\n", buf); // action here
+      nBytes = 0;
+      prevNBytes = 0;
+    } else {
+      buf[nBytes++] = c; // other chars append
+    }
+    
+    // === overwrite past line if it gets shorter ===
+    // note: clearing first to put cursor into correct place
+    if (nBytes < prevNBytes){
+      fputc('\r', stdout);
+      for (int ix = 0; ix < prevNBytes; ++ix)
+	fputc(' ', stdout);
+    }
+
+    // === write current line ===
+    fputc('\r', stdout);
+    for (int ix = 0; ix < nBytes; ++ix)
+      fputc(buf[ix], stdout);
+    fflush(stdout);
+    prevNBytes = nBytes;
+  }
+}
+
 /** Event handler for Ethernet events */
 static void eth_event_handler(void *arg, esp_event_base_t event_base,
-                              int32_t event_id, void *event_data)
-{
+                              int32_t event_id, void *event_data){
   uint8_t mac_addr[6] = {0};
   /* we can get the ethernet driver handle from event data */
   esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)event_data;
-
+  
   switch (event_id) {
   case ETHERNET_EVENT_CONNECTED:
     esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
@@ -55,11 +100,10 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
 
 /** Event handler for IP_EVENT_ETH_GOT_IP */
 static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
-                                 int32_t event_id, void *event_data)
-{
+                                 int32_t event_id, void *event_data){
   ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
   const esp_netif_ip_info_t *ip_info = &event->ip_info;
-
+  
   ESP_LOGI(TAG, "Ethernet Got IP Address");
   ESP_LOGI(TAG, "~~~~~~~~~~~");
   ESP_LOGI(TAG, "ETHIP:" IPSTR, IP2STR(&ip_info->ip));
@@ -132,81 +176,97 @@ void app_main(void){
     
   // Start Ethernet driver state machine
   ESP_ERROR_CHECK(esp_eth_start(eth_handles[0]));
-
-  // ===============================
-    int listen_socket = -1;
-    int client_socket = -1;
-    int opt = 1;
-    int err = 0;
-    struct sockaddr_in remote_addr;
-    socklen_t addr_len = sizeof(struct sockaddr);
-    struct sockaddr_storage listen_addr = { 0 };
-
-    struct sockaddr_in listen_addr4 = { 0 };
-
-    listen_addr4.sin_family = AF_INET;
-    listen_addr4.sin_port = htons(/*port*/79);
-    listen_addr4.sin_addr.s_addr = info.ip.addr;
-    
-    listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (listen_socket < 0){
-      ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-      ESP_ERROR_CHECK(ESP_FAIL);
-    }
-    
-    setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
   
-    ESP_LOGI(TAG, "Socket created");
+  // === socket: create ===
+  int listen_socket = -1;
+  int client_socket = -1;
+  int opt = 1;
+  int err = 0;
+  struct sockaddr_in remote_addr;
+  socklen_t addr_len = sizeof(struct sockaddr);
+  struct sockaddr_storage listen_addr = { 0 };
   
-    err = bind(listen_socket, (struct sockaddr *)&listen_addr4, sizeof(listen_addr4));
-    if (err){
-      ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
-      ESP_ERROR_CHECK(ESP_FAIL);
+  struct sockaddr_in listen_addr4 = { 0 };
+  
+  listen_addr4.sin_family = AF_INET;
+  listen_addr4.sin_port = htons(/*port*/79);
+  listen_addr4.sin_addr.s_addr = info.ip.addr;
+  
+  listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (listen_socket < 0){
+    ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+    ESP_ERROR_CHECK(ESP_FAIL);
+  }    
+  setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  ESP_LOGI(TAG, "Socket created");
+  
+  // === socket: bind ===
+  err = bind(listen_socket, (struct sockaddr *)&listen_addr4, sizeof(listen_addr4));
+  if (err){
+    ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+    ESP_ERROR_CHECK(ESP_FAIL);
+  }
+  
+  // === socket: listen ===
+  err = listen(listen_socket, /*backlog*/5);
+  if (err){
+    ESP_LOGE(TAG, "listen: errno %d", errno);
+    ESP_ERROR_CHECK(ESP_FAIL);
+  }
+  memcpy(&listen_addr, &listen_addr4, sizeof(listen_addr4));
+  
+  // === start console task ===
+  int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, NULL, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+  if (ret != pdPASS) {
+    ESP_LOGE(TAG, "failed to create console task");
+  }
+#if 0    
+  while (1){
+    char c = fgetc(stdin);
+    if (c != 0xFF){
+      fprintf(stdout, "%02x\r\n", (int)c);
+      break;
     }
-    
-    err = listen(listen_socket, /*backlog*/5);
-    if (err){
-      ESP_LOGE(TAG, "listen: errno %d", errno);
-      ESP_ERROR_CHECK(ESP_FAIL);
-    }
-    memcpy(&listen_addr, &listen_addr4, sizeof(listen_addr4));
-    
-    while (1){
-      //struct timeval timeout = { 0 };
-      //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
-      //setsockopt(listen_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-      client_socket = accept(listen_socket, (struct sockaddr *)&remote_addr, &addr_len);
-      
-      if (client_socket < 0){
-	ESP_LOGE(TAG, "accept: errno %d", errno);
-	ESP_ERROR_CHECK(ESP_FAIL);
-      }
-      ESP_LOGI(TAG, "accept: %s,%d", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
-      
-      //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
-      //setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-      
-      // === echo loop ===
-      while (1){
-	uint8_t buf[1];
-	int state = getc_via_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*nBytes*/1, buf);
-	if (!state){
-	  ESP_LOGI(TAG, "disconnect");
-	  break; // disconnect
-	}
-	send_to_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*data*/buf, /*nBytes*/1);
-      }    
-#if 0
-    exit:
-      if (client_socket != -1) {
-	close(client_socket);
-      }
-      
-      if (listen_socket != -1) {
-	shutdown(listen_socket, 0);
-	close(listen_socket);
-	ESP_LOGI(TAG, "TCP Socket server is closed.");
-      }
+  }
+  fprintf(stdout, "thank you\r\n");
 #endif
-    } // while forever
+  // === socket accept loop ===
+  while (1){
+    //struct timeval timeout = { 0 };
+    //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
+    //setsockopt(listen_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    client_socket = accept(listen_socket, (struct sockaddr *)&remote_addr, &addr_len);
+    
+    if (client_socket < 0){
+      ESP_LOGE(TAG, "accept: errno %d", errno);
+      ESP_ERROR_CHECK(ESP_FAIL);
+    }
+    ESP_LOGI(TAG, "accept: %s,%d", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
+      
+    //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
+    //setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+      
+    // === echo loop ===
+    while (1){
+      uint8_t buf[1];
+      int state = getc_via_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*nBytes*/1, buf);
+      if (!state){
+	ESP_LOGI(TAG, "disconnect");
+	break; // disconnect
+      }
+      send_to_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*data*/buf, /*nBytes*/1);
+    }    
+#if 0
+  exit:
+    if (client_socket != -1) {
+      close(client_socket);
+    }
+      
+    if (listen_socket != -1) {
+      shutdown(listen_socket, 0);
+      close(listen_socket);
+      ESP_LOGI(TAG, "TCP Socket server is closed.");
+    }
+#endif
+  } // while forever
 }
