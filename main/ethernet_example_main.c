@@ -18,11 +18,13 @@
 #include "sdkconfig.h"
 #include "lwip/sockets.h"
 #include "esp_err.h"
-
+#include "nvs_flash.h"
+#include "nvs.h"
 //#include <sys/param.h>
 #include <sys/socket.h>
 
 static const char *TAG = "eth_example";
+static nvs_handle_t NVS_handle;
 
 static void console_task(void *arg){
   ESP_LOGI(TAG, "console task running");
@@ -49,6 +51,18 @@ static void console_task(void *arg){
       printf("you wrote '%s'\r\n", buf); // action here
       nBytes = 0;
       prevNBytes = 0;
+
+      uint32_t addr = esp_ip4addr_aton("192.168.178.123");
+      esp_err_t err = nvs_set_u32(NVS_handle, "ip", addr);
+      if (err != ESP_OK){
+	ESP_LOGE(TAG, "nvs_set_i32");
+	ESP_ERROR_CHECK(ESP_FAIL);
+      }
+      err = nvs_commit(NVS_handle);
+      if (err != ESP_OK){
+	ESP_LOGE(TAG, "nvs_commit");
+	ESP_ERROR_CHECK(ESP_FAIL);
+      }      
     } else {
       buf[nBytes++] = c; // other chars append
     }
@@ -138,6 +152,79 @@ static void IRAM_ATTR send_to_tcpIp(int send_socket, struct sockaddr* dest_addr,
 }
 
 void app_main(void){
+  {
+  // === initialize NVS ===
+  ESP_LOGI(TAG, "initializing NVS");
+  esp_err_t err = nvs_flash_init();
+  if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    // NVS partition was truncated and needs to be erased
+    // Retry nvs_flash_init
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    err = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK( err );
+  
+  // === open NVS ===
+  ESP_LOGI(TAG, "initializing NVS");
+  err = nvs_open("storage", NVS_READWRITE, &NVS_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "nvs_open (%s)", esp_err_to_name(err));
+    ESP_ERROR_CHECK(ESP_FAIL);
+  }
+
+  // == set up default values if not found in NVM ===
+  char* ip= "192.168.178.123";
+  char* gateway = "192.168.178.1";
+  char* netmask = "255.255.255.0";
+  esp_netif_ip_info_t info;
+  memset(&info, 0, sizeof(esp_netif_ip_info_t));
+  info.ip.addr = esp_ip4addr_aton(ip);
+  info.gw.addr = esp_ip4addr_aton(gateway);
+  info.netmask.addr = esp_ip4addr_aton(netmask);
+  
+  err = nvs_get_u32(NVS_handle, "ip", &info.ip.addr);
+  switch (err) {
+  case ESP_OK:
+    ESP_LOGI(TAG, "ip found in nvs");
+    break;
+  case ESP_ERR_NVS_NOT_FOUND:
+    ESP_LOGI(TAG, "no ip in nvs, using default");
+    break;
+  default :
+    ESP_LOGE(TAG, "nvs_get_u32 (%s)", esp_err_to_name(err));
+    ESP_ERROR_CHECK(ESP_FAIL);    
+  }
+
+  err = nvs_get_u32(NVS_handle, "gateway", &info.gw.addr);
+  switch (err) {
+  case ESP_OK:
+    ESP_LOGI(TAG, "gateway found in nvs");
+    break;
+  case ESP_ERR_NVS_NOT_FOUND:
+    ESP_LOGI(TAG, "no gateway in nvs, using default");
+    break;
+  default :
+    ESP_LOGE(TAG, "nvs_get_u32 (%s)", esp_err_to_name(err));
+    ESP_ERROR_CHECK(ESP_FAIL);    
+  }
+
+  err = nvs_get_u32(NVS_handle, "netmask", &info.netmask.addr);
+  switch (err) {
+  case ESP_OK:
+    ESP_LOGI(TAG, "netmask found in nvs");
+    break;
+  case ESP_ERR_NVS_NOT_FOUND:
+    ESP_LOGI(TAG, "no netmask in nvs, using default");
+    break;
+  default :
+    ESP_LOGE(TAG, "nvs_get_u32 (%s)", esp_err_to_name(err));
+    ESP_ERROR_CHECK(ESP_FAIL);    
+  }
+
+  ESP_LOGI(TAG, "ip:" IPSTR, IP2STR(&info.ip));
+  ESP_LOGI(TAG, "netmask:" IPSTR, IP2STR(&info.netmask));
+  ESP_LOGI(TAG, "gateway:" IPSTR, IP2STR(&info.gw));
+}  
   // Initialize Ethernet driver
   uint8_t eth_port_cnt = 0;
   esp_eth_handle_t *eth_handles;
