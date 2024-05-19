@@ -1,11 +1,4 @@
-/* Ethernet Basic Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
+//https://stackoverflow.com/questions/60657032/using-select-with-multiple-sockets
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -25,6 +18,40 @@
 
 static const char *TAG = "eth_example";
 static nvs_handle_t NVS_handle;
+
+typedef struct {
+  int recv_socket;
+  void(*) dataCallback(void);
+} ethRxLoopArg_t;
+
+static IRAM_ATTR void ethRxLoop(void* _arg){
+  ethRxLoopArg_t* arg = (ethRxLoopArg_t*)_arg;
+  const uint32_t nBytesMax = 255; // +1 for C string zero termination
+  uint32_t nBytesBuf = 0;
+  char cmdBuf[256]; 
+  while (1){
+    for (int pass = 0; pass < 2; ++pass){
+      uint32_t nBytesNextRead = (pass == 0) ? 1 : nBytesMax - nBytesBuf;
+      uint32_t flags = (pass == 0) ? /*blocking*/ 0 : /*non-blocking*/MSG_DONTWAIT
+
+	socklen_t socklen = sizeof(struct sockaddr_in);
+      int nRec = recvfrom(recv_socket, data, nBytes, flags, dest_addr, &socklen);
+      if (nRec < 0)
+	return 0; // DISCONNECT
+      if (nRec > nBytes){
+	ESP_LOGI(TAG, "recvfrom: excess data?!");
+      ESP_ERROR_CHECK(ESP_FAIL);
+    }
+
+    }
+
+    nBytes -= nRec;
+    if (!nBytes)
+      return 1; // SUCCESS
+    data += nRec;
+  }
+}
+
 
 static void console_task(void *arg){
   ESP_LOGI(TAG, "console task running");
@@ -323,7 +350,6 @@ void app_main(void){
     //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
     //setsockopt(listen_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     client_socket = accept(listen_socket, (struct sockaddr *)&remote_addr, &addr_len);
-    
     if (client_socket < 0){
       ESP_LOGE(TAG, "accept: errno %d", errno);
       ESP_ERROR_CHECK(ESP_FAIL);
