@@ -1,6 +1,7 @@
 //https://stackoverflow.com/questions/60657032/using-select-with-multiple-sockets
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h> // uint32_t
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_netif.h"
@@ -11,19 +12,16 @@
 #include "sdkconfig.h"
 #include "lwip/sockets.h"
 #include "esp_err.h"
-#include "nvs_flash.h"
-#include "nvs.h"
 //#include <sys/param.h>
 #include <sys/socket.h>
+#include "driver/gpio.h"
 
-static const char *TAG = "eth_example";
-static nvs_handle_t NVS_handle;
+#include "nvsMan.h"
+#include "errMan.h"
+#include "util.h"
 
-typedef struct {
-  char msg[256];
-  unsigned int errCount;  
-  SemaphoreHandle_t mutex;
-} errMan_t;
+static const char *TAG = "main";
+static nvsMan_t nvsMan;
 
 typedef struct ethRxLoopArg_s ethRxLoopArg_t;
 typedef struct ethRxLoopArg_s{
@@ -42,49 +40,13 @@ typedef struct ethRxLoopArg_s{
   char buf[256]; // e.g. return message
 } ethRxLoopArg_t;
 
-// === error manager ===
-void errMan_init(errMan_t* self){
-  self->errCount = 0;
-  // self->mutex = xSemaphoreCreateMutex(); // errMan is thread-specific, no need for mutex
+void ethRxLoopArg_init(ethRxLoopArg_t* self){
+  errMan_init(&self->errMan);
 }
-
-void errMan_reportError(errMan_t* self, const char* msg){
-  // xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY);
-
-  if (!self->errCount) // only store first error
-    strcpy(self->msg, msg);  
-  ++self->errCount;
-
-  // xSemaphoreGive(self->mutex);
-}
-
-int errMan_getError(errMan_t* self, char* dest){
-  int retVal = 0; // retval: no error
-  // xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY); // --------
-  if (self->errCount){
-    strcpy(dest, self->msg);
-    retVal = self->errCount; // retval: number of logged errors since last readout
-    self->errCount = 0;
-  }
-  
-  // xSemaphoreGive(self->mutex); // ---------------------------------------------
-  return retVal;
-}
-
-static void IRAM_ATTR send_to_tcpIp(int send_socket, struct sockaddr* dest_addr, uint8_t* data, int nBytes){
-  int actual_send = sendto(send_socket, data, nBytes, 0, dest_addr, sizeof(struct sockaddr_in));
-  if (actual_send != nBytes) {
-    ESP_LOGI(TAG, "sendto");
-    ESP_ERROR_CHECK(ESP_FAIL);
-  }
-}
-
-
 
 // === ethernet receive loop, shuts down task on disconnect ===
 static IRAM_ATTR void ethRxLoop(void* _arg){
   ethRxLoopArg_t* arg = (ethRxLoopArg_t*)_arg;
-
 
   // === socket: create ===
   int listen_socket = -1;
@@ -159,10 +121,7 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 	nBytesNextRead = blockingRead ? 1 : nBytesMax;
       }
 
-      ESP_LOGI(TAG, "receiving %d bytes", (int)nBytesNextRead);
-      
       int nBytesReceived = recv(client_socket, cmdBuf+nBytesBuf, nBytesNextRead, flags);
-      ESP_LOGI(TAG, "got %d bytes", (int)nBytesReceived);
       if (nBytesReceived < 0) goto disconnect; /* "break mainloop" */
       if (nBytesReceived > nBytesNextRead){
 	ESP_LOGE(TAG, "recvfrom: ?!excess data?!");
@@ -175,7 +134,6 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
       // === scan for newline \n ===
       int scanPos = nParsed;
       while (scanPos < nBytesBuf){
-	ESP_LOGI(TAG, "scanPos %d nBytesBuf %d char %d", (int)scanPos, (int)nBytesBuf, (int)cmdBuf[scanPos]);
 	char c = cmdBuf[scanPos];
 	// robust end-of-line sequence:
 	// Windows: "\r\n"
@@ -190,12 +148,11 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 	    // error has already been reported but we do salvage data following the newline
 	    overrun = 0;
 	  } else {
-	    // send_to_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*data*/(uint8_t*)cmdBuf, /*nBytes*/scanPos+1);
 	    cmdBuf[scanPos] = 0; // convert newline char to C end-of-string null
 	    const char* resp = arg->dataCallback(arg, cmdBuf);
 	    while (resp){
-	      unsigned int nBytesToSend = strlen(resp);
-	      int nBytesSent = sendto(client_socket, resp, nBytesToSend, 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
+	      size_t nBytesToSend = strlen(resp);
+	      size_t nBytesSent = sendto(client_socket, resp, nBytesToSend, 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
 	      if (nBytesSent != nBytesToSend) goto disconnect; /* "break mainloop" */
 	      resp = arg->dataCallback(arg, /*indicates retrieval of additional output from last cmd*/NULL);
 	    } // while more output to send
@@ -252,18 +209,6 @@ static void console_task(void *arg){
       printf("you wrote '%s'\r\n", buf); // action here
       nBytes = 0;
       prevNBytes = 0;
-
-      uint32_t addr = esp_ip4addr_aton("192.168.178.123");
-      esp_err_t err = nvs_set_u32(NVS_handle, "ip", addr);
-      if (err != ESP_OK){
-	ESP_LOGE(TAG, "nvs_set_i32");
-	ESP_ERROR_CHECK(ESP_FAIL);
-      }
-      err = nvs_commit(NVS_handle);
-      if (err != ESP_OK){
-	ESP_LOGE(TAG, "nvs_commit");
-	ESP_ERROR_CHECK(ESP_FAIL);
-      }      
     } else {
       buf[nBytes++] = c; // other chars append
     }
@@ -327,27 +272,75 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
   ESP_LOGI(TAG, "~~~~~~~~~~~");
 }
 
-#if 0
-static IRAM_ATTR int getc_via_tcpIp(int recv_socket, struct sockaddr* dest_addr, int nBytes, uint8_t* data){
-  socklen_t socklen = sizeof(struct sockaddr_in);
-  while (1){
-    int nRec = recvfrom(recv_socket, data, nBytes, 0, dest_addr, &socklen);
-    if (nRec < 0)
-      return 0; // DISCONNECT
-    if (nRec > nBytes){
-      ESP_LOGI(TAG, "recvfrom: excess data?!");
-      ESP_ERROR_CHECK(ESP_FAIL);
-    }
-    nBytes -= nRec;
-    if (!nBytes)
-      return 1; // SUCCESS
-    data += nRec;
-  }
-}
-#endif
-
 const char* myCallback(ethRxLoopArg_t* self, const char* inp){
   if (inp){
+    // === extract command token ===
+    const char *pTokenBegin, *pTokenEnd;
+    if (util_tokenize(inp, &pTokenBegin, &pTokenEnd)){
+      // special case: omit token count (optimization for loopback benchmarking)
+      if (util_tokenEquals("ECHO", pTokenBegin, pTokenEnd)){
+	// ECHO without argument returns empty line
+	// only a single whitespace character is skipped. That is, "ECHO  x" returns " x"
+	sprintf(self->buf, "%s\n", (*pTokenEnd=='\0') ? "" : pTokenEnd+1);
+	return self->buf;	
+      }
+
+      // === count argument tokens ===
+      size_t nArgs = util_tokenCount(pTokenEnd);
+
+      if(util_tokenEquals("ERR?", pTokenBegin, pTokenEnd)){
+	if (nArgs != 0){
+	  errMan_reportError(&self->errMan, "PARAMETER_COUNT");
+	  return NULL;
+	}
+	
+	const char* errMsg;
+	int nErr = errMan_getError(&self->errMan, &errMsg);
+	sprintf(self->buf, "%i,%s\n", nErr, (!nErr) ? "NO_ERROR" : errMsg);	
+	return self->buf;
+      } else if(util_tokenEquals("ERRCLR", pTokenBegin, pTokenEnd)){
+	if (nArgs != 0){
+	  errMan_reportError(&self->errMan, "PARAMETER_COUNT");
+	  return NULL;
+	}
+	const char* errMsg;
+	errMan_getError(&self->errMan, &errMsg);
+	return NULL;
+      } else if(util_tokenEquals("RESTART", pTokenBegin, pTokenEnd)){
+	if (nArgs != 0){
+	  errMan_reportError(&self->errMan, "PARAMETER_COUNT");
+	  return NULL;
+	}
+
+	ESP_LOGI(TAG, "RESTARTing...");
+	esp_restart();
+      } else if(util_tokenEquals("ETH_IP?", pTokenBegin, pTokenEnd)){
+	if (nArgs != 0){
+	  errMan_reportError(&self->errMan, "PARAMETER_COUNT");
+	  return NULL;
+	}
+
+	char tmp[20];
+	util_printIp(tmp, nvsMan_get_u32(&nvsMan, "ip"));
+	sprintf(self->buf, "%s\n", tmp);
+	return self->buf;
+      } else if(util_tokenEquals("ETH_IP", pTokenBegin, pTokenEnd)){
+	if (nArgs != 1){
+	  errMan_reportError(&self->errMan, "PARAMETER_COUNT");
+	  return NULL;
+	}
+	const char *pArg1Begin, *pArg1End;
+	util_tokenize(pTokenEnd, &pArg1Begin, &pArg1End);
+	char tmp[256];
+	util_token2cstring(pArg1Begin, pArg1End, tmp);
+	
+	printf("ETH_IP: '%s'\n", tmp);
+	return NULL;
+      } else {
+	errMan_reportError(&self->errMan, "SYNTAX_ERROR");
+      }
+    }
+    
     sprintf(self->buf, "you wrote: '%s'\n", inp);
     return self->buf;
   } else {
@@ -357,78 +350,8 @@ const char* myCallback(ethRxLoopArg_t* self, const char* inp){
  
 void app_main(void){{
     // === initialize NVS ===
-    ESP_LOGI(TAG, "initializing NVS");
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      // NVS partition was truncated and needs to be erased
-      // Retry nvs_flash_init
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK( err );
+    nvsMan_init(&nvsMan);
 
-    {
-      // === open NVS ===
-      ESP_LOGI(TAG, "initializing NVS");
-      err = nvs_open("storage", NVS_READWRITE, &NVS_handle);
-      if (err != ESP_OK) {
-	ESP_LOGE(TAG, "nvs_open (%s)", esp_err_to_name(err));
-	ESP_ERROR_CHECK(ESP_FAIL);
-      }
-
-      // == set up default values if not found in NVM ===
-      char* ip= "192.168.178.123";
-      char* gateway = "192.168.178.1";
-      char* netmask = "255.255.255.0";
-      esp_netif_ip_info_t info;
-      memset(&info, 0, sizeof(esp_netif_ip_info_t));
-      info.ip.addr = esp_ip4addr_aton(ip);
-      info.gw.addr = esp_ip4addr_aton(gateway);
-      info.netmask.addr = esp_ip4addr_aton(netmask);
-  
-      err = nvs_get_u32(NVS_handle, "ip", &info.ip.addr);
-      switch (err) {
-      case ESP_OK:
-	ESP_LOGI(TAG, "ip found in nvs");
-	break;
-      case ESP_ERR_NVS_NOT_FOUND:
-	ESP_LOGI(TAG, "no ip in nvs, using default");
-	break;
-      default :
-	ESP_LOGE(TAG, "nvs_get_u32 (%s)", esp_err_to_name(err));
-	ESP_ERROR_CHECK(ESP_FAIL);    
-      }
-
-      err = nvs_get_u32(NVS_handle, "gateway", &info.gw.addr);
-      switch (err) {
-      case ESP_OK:
-	ESP_LOGI(TAG, "gateway found in nvs");
-	break;
-      case ESP_ERR_NVS_NOT_FOUND:
-	ESP_LOGI(TAG, "no gateway in nvs, using default");
-	break;
-      default :
-	ESP_LOGE(TAG, "nvs_get_u32 (%s)", esp_err_to_name(err));
-	ESP_ERROR_CHECK(ESP_FAIL);    
-      }
-
-      err = nvs_get_u32(NVS_handle, "netmask", &info.netmask.addr);
-      switch (err) {
-      case ESP_OK:
-	ESP_LOGI(TAG, "netmask found in nvs");
-	break;
-      case ESP_ERR_NVS_NOT_FOUND:
-	ESP_LOGI(TAG, "no netmask in nvs, using default");
-	break;
-      default :
-	ESP_LOGE(TAG, "nvs_get_u32 (%s)", esp_err_to_name(err));
-	ESP_ERROR_CHECK(ESP_FAIL);    
-      }
-
-      ESP_LOGI(TAG, "ip:" IPSTR, IP2STR(&info.ip));
-      ESP_LOGI(TAG, "netmask:" IPSTR, IP2STR(&info.netmask));
-      ESP_LOGI(TAG, "gateway:" IPSTR, IP2STR(&info.gw));
-    }
     // Initialize Ethernet driver
     uint8_t eth_port_cnt = 0;
     esp_eth_handle_t *eth_handles;
@@ -467,37 +390,30 @@ void app_main(void){{
     
     // Start Ethernet driver state machine
     ESP_ERROR_CHECK(esp_eth_start(eth_handles[0]));
-
-
-    ethRxLoopArg_t ethLoopArg; // lifetime: below task must end before current scope is exited
-    ethLoopArg.dataCallback = myCallback;
-    ethLoopArg.port = 79;
-    ethLoopArg.myIpAddr = info.ip.addr;
-    int ret = xTaskCreatePinnedToCore(ethRxLoop, "eth", /*stack*/4096, (void*)&ethLoopArg, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
-    if (ret != pdPASS) {
-      ESP_LOGE(TAG, "failed to create eth task");
+    
+    // === start TCP/IP server threads ===
+    // note: LWIP doesn't seem to have issues with multi-threaded, parallel accept() instead of a single select()
+    const size_t nConnections = 4;
+    ethRxLoopArg_t tcpIpConnections[nConnections]; // lifetime: below task must end before current scope is exited    
+    for (size_t ixConn = 0; ixConn < nConnections; ++ixConn){
+      ethRxLoopArg_init(&tcpIpConnections[ixConn]);
+      tcpIpConnections[ixConn].dataCallback = myCallback;
+      tcpIpConnections[ixConn].port = 76 + ixConn; // port range defined here
+      tcpIpConnections[ixConn].myIpAddr = info.ip.addr;
+      int ret = xTaskCreatePinnedToCore(ethRxLoop, "eth", /*stack*/4096, (void*)&tcpIpConnections[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+      if (ret != pdPASS) {
+	ESP_LOGE(TAG, "failed to create eth task");
+	ESP_ERROR_CHECK(ESP_FAIL);
+      }
     }
-
-    ethRxLoopArg_t ethLoopArg2; // lifetime: below task must end before current scope is exited
-    ethLoopArg2.dataCallback = myCallback;
-    ethLoopArg2.port = 78;
-    ethLoopArg2.myIpAddr = info.ip.addr;
-    ret = xTaskCreatePinnedToCore(ethRxLoop, "eth", /*stack*/4096, (void*)&ethLoopArg2, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
-    if (ret != pdPASS) {
-      ESP_LOGE(TAG, "failed to create eth task");
-    }
-
-
-
-
-
-  
+    
     // === start console task ===
-     ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, NULL, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+    int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, NULL, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
       ESP_LOGE(TAG, "failed to create console task");
+      ESP_ERROR_CHECK(ESP_FAIL);
     }
-
+    
     while (1){
       printf("zzz\n");    
       vTaskDelay(1000/portTICK_PERIOD_MS);

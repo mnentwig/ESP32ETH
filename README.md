@@ -15,5 +15,29 @@ Data gets echoed back (after pressing RETURN, unless Teraterm is set to send cha
 - "ECHO XYZ" may be used to wait for completion of previous, slow commands.
 - TCP/IP is not used for framing. That is, sending commands character-by-character or a command sequence spanning tens of kB will give the same result (the latter being more efficient)
 
+## connect via Teraterm
+- change "Setup/Terminal/New Line/Receive" to AUTO
+- File/New Connection, TCP/IP, "Other" (or "Telnet"). Set TCP/IP address and port e.g. 79 (see code)
 
+## command set
+### ERR? command
+- Returns error count and the first error message, comma-separated.
 
+- returns "0,NO_ERROR" in case of no error.
+
+- clears the error status. E.g. use ERR? before a problematic command to see the actual error message, not an earlier one.
+
+### ERRCLR
+- clears the error status (same as ERR?) but does not return anything
+
+### RESTART
+Resets the processor, e.g. to apply new IP settings
+
+### ETH_IP?
+returns the IP address stored in flash memory (may differ from current IP address until REBOOT)
+
+## error messages
+### SYNTAX_ERROR
+Unrecognized command token
+### PARAMETER_COUNT
+Unexpected number of command parameters
