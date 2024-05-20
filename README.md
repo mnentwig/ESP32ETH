@@ -1,7 +1,7 @@
-# simple ESP32 Ethernet (Olimex ESP32-ETH board) demo
-Use 192.168.178.1 fixed IP on connecting ETH card.
-Use Teraterm "new connection": Telnet, connect to 192.168.178.123 on port 79
-Data gets echoed back (after pressing RETURN, unless Teraterm is set to send characters immediately)
+# ESP32-/Ethernet platform (Olimex ESP32-ETH board) e.g. for GPIO control
+Generic remote-control application via simple ASCII protocol e.g. to operate GPIOs via the network.
+
+Serves multiple TCP/IP ports.
 
 ## Protocol
 - text-based only
@@ -34,10 +34,27 @@ Data gets echoed back (after pressing RETURN, unless Teraterm is set to send cha
 Resets the processor, e.g. to apply new IP settings
 
 ### ETH_IP?
-returns the IP address stored in flash memory (may differ from current IP address until REBOOT)
+returns the static IP address stored in flash memory (may differ from actual interface setting which updates on REBOOT)
+
+### ETH_GW?
+returns the gateway IP address stored in flash memory (may differ from actual interface setting which updates on REBOOT)
+
+### ETH_MASK?
+returns the netmask stored in flash memory (may differ from actual interface setting which updates on REBOOT)
+
+### ETH_IP xxx.xxx.xxx.xxx
+changes the static IP address stored in flash memory (actual interface setting updates on REBOOT)
+
+### ETH_GW xxx.xxx.xxx.xxx
+changes the gateway IP address stored in flash memory (actual interface setting updates on REBOOT)
+
+### ETH_MASK
+changes the netmask stored in flash memory (actual interface setting updates on REBOOT)
 
 ## error messages
 ### SYNTAX_ERROR
 Unrecognized command token
 ### ARG_COUNT
 Unexpected number of command parameters
+### ARG_PARSE_IP
+Argument could not be parsed as IP4-address e.g. 192.168.1.100 (note: leading zeros e.g. 192.168.001.100 are not allowed)
