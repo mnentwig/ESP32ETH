@@ -58,3 +58,8 @@ Unrecognized command token
 Unexpected number of command parameters
 ### ARG_PARSE_IP
 Argument could not be parsed as IP4-address e.g. 192.168.1.100 (note: leading zeros e.g. 192.168.001.100 are not allowed)
+
+# IDF version
+use 5.2.1
+
+

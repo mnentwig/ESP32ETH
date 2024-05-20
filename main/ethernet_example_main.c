@@ -15,10 +15,13 @@
 //#include <sys/param.h>
 #include <sys/socket.h>
 #include "driver/gpio.h"
+#include "driver/uart.h"
 
 #include "nvsMan.h"
 #include "errMan.h"
 #include "util.h"
+#include "esp_vfs_dev.h"// blocking stdin (interrupt driver)
+#include "esp_vfs.h"
 
 static const char *TAG = "main";
 static nvsMan_t nvsMan;
@@ -187,29 +190,36 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 static void console_task(void *arg){
   ESP_LOGI(TAG, "console task running");
   char buf[256];
-  const int nBytesMax = 256;
-  TickType_t delay_interval = 20 / portTICK_PERIOD_MS;
+  const int nBytesMax = 255; // need 1 char for \0
   int nBytes = 0;
   int prevNBytes = 0;
+
+  fcntl(fileno(stdout), F_SETFL, 0);
+  fcntl(fileno(stdin), F_SETFL, 0);
   while (1){
-    const char c = fgetc(stdin);
-    if (c == 0xFF){
-      vTaskDelay(delay_interval);
+
+    char c;
+    const int nReceived = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, &c, /*nBytes*/1, /*timeout*/1000 / portTICK_PERIOD_MS);
+    if (!nReceived)
       continue;
-    }
-    if (nBytes == nBytesMax) // full buffer keeps changing last char
-      --nBytes;
     if ((c == 0x08) && nBytes){ // backspace deletes
       --nBytes;
     } else if (c == 27){// ESC key
       nBytes = 0; // clears line
-    } else if (c == '\n'){
-      fputc(c, stdout); // forward to console
+    } else if ((c == '\r') || (c == '\n')){
+      if (!nBytes)
+	continue; // suppress empty line and 2nd char of \r\n
+      fputc(c, stdout); // forward to console      
       buf[nBytes++] = 0; // C string termination
       printf("you wrote '%s'\r\n", buf); // action here
       nBytes = 0;
       prevNBytes = 0;
     } else {
+      if (!nBytes && ((c == ' ') || (c == '\t')))
+	continue; // suppress leading whitespace
+      if (nBytes == nBytesMax) // full buffer keeps changing last char
+	--nBytes;
+      
       buf[nBytes++] = c; // other chars append
     }
     
@@ -365,8 +375,16 @@ const char* myCallback(ethRxLoopArg_t* self, const char* inp){
     return NULL;
   }
 }
- 
+
 void app_main(void){{
+    // === install interrupt-based UART driver ===
+    // enables blocking read
+    fflush(stdin);
+    fflush(stdout);
+    
+    ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0));
+    esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
+
     // === initialize NVS ===
     nvsMan_init(&nvsMan);
 
@@ -433,31 +451,15 @@ void app_main(void){{
     }
     
     while (1){
-      printf("zzz\n");    
       vTaskDelay(1000/portTICK_PERIOD_MS);
     }
     
-#if 0    
-    while (1){
-      char c = fgetc(stdin);
-      if (c != 0xFF){
-	fprintf(stdout, "%02x\r\n", (int)c);
-	break;
-      }
-    }
-    fprintf(stdout, "thank you\r\n");
-#endif
-#if 0
-  exit:
-    if (client_socket != -1) {
-      close(client_socket);
-    }
-      
-    if (listen_socket != -1) {
-      shutdown(listen_socket, 0);
-      close(listen_socket);
-      ESP_LOGI(TAG, "TCP Socket server is closed.");
-    }
-#endif
+    // if (client_socket != -1) {
+    //  close(client_socket);
+    //}
+    
+    //if (listen_socket != -1) {
+    //  shutdown(listen_socket, 0);
+    //  close(listen_socket);
   } // while forever
 }

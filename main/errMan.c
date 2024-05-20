@@ -1,7 +1,7 @@
 #include <string.h>
 
 #include "errMan.h"
-static const char *TAG = "errMan";
+//static const char *TAG = "errMan";
 void errMan_init(errMan_t* self){
   self->errCount = 0;
   // self->mutex = xSemaphoreCreateMutex();
