@@ -20,44 +20,54 @@ static const char *TAG = "eth_example";
 static nvs_handle_t NVS_handle;
 
 typedef struct {
-  void(*dataCallback)(const char*);
-  uint32_t myIpAddr;
-  int port;
-} ethRxLoopArg_t;
-
-// === error manager ===
-typedef struct {
   char msg[256];
-  int errCount;  
+  unsigned int errCount;  
   SemaphoreHandle_t mutex;
 } errMan_t;
 
-static errMan_t errMan;
+typedef struct ethRxLoopArg_s ethRxLoopArg_t;
+typedef struct ethRxLoopArg_s{
+  // usage:
+  // - call with new input "inp", '\0'-terminated C string
+  // - return value is reply (or NULL if no reply), '\0'-terminated C string
+  // - for non-null return value, call repeatedly with NULL input to fully retrieve response
+  // - function must terminate each line with '\n'
+  // note: multi-line response is possible e.g. long memory dump, ADC capture etc.
+  //       client may use follow-up "ECHO XYZ" with a suitable XYZ token to confirm sync afterwards
+  //       response validity is guaranteed only up to next call on any 'self' method
+  const char*(*dataCallback)(ethRxLoopArg_t* self, const char* inp);
+  uint32_t myIpAddr;
+  int port;
+  errMan_t errMan;
+  char buf[256]; // e.g. return message
+} ethRxLoopArg_t;
+
+// === error manager ===
 void errMan_init(errMan_t* self){
   self->errCount = 0;
-  self->mutex = xSemaphoreCreateMutex();
+  // self->mutex = xSemaphoreCreateMutex(); // errMan is thread-specific, no need for mutex
 }
 
 void errMan_reportError(errMan_t* self, const char* msg){
-  xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY);
+  // xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY);
 
   if (!self->errCount) // only store first error
     strcpy(self->msg, msg);  
   ++self->errCount;
 
-  xSemaphoreGive(self->mutex);
+  // xSemaphoreGive(self->mutex);
 }
 
 int errMan_getError(errMan_t* self, char* dest){
   int retVal = 0; // retval: no error
-  xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY); // --------
+  // xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY); // --------
   if (self->errCount){
     strcpy(dest, self->msg);
     retVal = self->errCount; // retval: number of logged errors since last readout
     self->errCount = 0;
   }
   
-  xSemaphoreGive(self->mutex); // ---------------------------------------------
+  // xSemaphoreGive(self->mutex); // ---------------------------------------------
   return retVal;
 }
 
@@ -142,7 +152,7 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 
       if (nBytesNextRead == 0){
 	if (!overrun){
-	  errMan_reportError(&errMan, "max cmd length exceeded");
+	  errMan_reportError(&arg->errMan, "max cmd length exceeded");
 	  overrun = 1;
 	}
 	nBytesBuf = 0;
@@ -153,12 +163,7 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
       
       int nBytesReceived = recv(client_socket, cmdBuf+nBytesBuf, nBytesNextRead, flags);
       ESP_LOGI(TAG, "got %d bytes", (int)nBytesReceived);
-      if (nBytesReceived < 0){ // DISCONNECT
-	ESP_LOGI(TAG, "disconnect on port %d", arg->port);
-	close(client_socket);
-	vTaskDelete(NULL);      
-	return;
-      }
+      if (nBytesReceived < 0) goto disconnect; /* "break mainloop" */
       if (nBytesReceived > nBytesNextRead){
 	ESP_LOGE(TAG, "recvfrom: ?!excess data?!");
 	ESP_ERROR_CHECK(ESP_FAIL);
@@ -185,12 +190,17 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 	    // error has already been reported but we do salvage data following the newline
 	    overrun = 0;
 	  } else {
-	    // echo data (including newline) 
-	    send_to_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*data*/(uint8_t*)cmdBuf, /*nBytes*/scanPos+1);
+	    // send_to_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*data*/(uint8_t*)cmdBuf, /*nBytes*/scanPos+1);
 	    cmdBuf[scanPos] = 0; // convert newline char to C end-of-string null
-	    arg->dataCallback(cmdBuf);
-	  }
-	}
+	    const char* resp = arg->dataCallback(arg, cmdBuf);
+	    while (resp){
+	      unsigned int nBytesToSend = strlen(resp);
+	      int nBytesSent = sendto(client_socket, resp, nBytesToSend, 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
+	      if (nBytesSent != nBytesToSend) goto disconnect; /* "break mainloop" */
+	      resp = arg->dataCallback(arg, /*indicates retrieval of additional output from last cmd*/NULL);
+	    } // while more output to send
+	  } // if not overrun
+	} // if termChar
 	
 	if (isTermChar || isLeadingWhitespace){
 	  // remove up to (including) scanPos from buffer:
@@ -208,6 +218,13 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
       } // foreach unparsed char
     }
   }
+  disconnect:
+    
+    ESP_LOGI(TAG, "disconnect on port %d", arg->port);
+	close(client_socket);
+	vTaskDelete(NULL);      
+	return;
+
 }
 
 static void console_task(void *arg){
@@ -329,7 +346,13 @@ static IRAM_ATTR int getc_via_tcpIp(int recv_socket, struct sockaddr* dest_addr,
 }
 #endif
 
-void myCallback(const char* string){
+const char* myCallback(ethRxLoopArg_t* self, const char* inp){
+  if (inp){
+    sprintf(self->buf, "you wrote: '%s'\n", inp);
+    return self->buf;
+  } else {
+    return NULL;
+  }
 }
  
 void app_main(void){{
@@ -451,6 +474,15 @@ void app_main(void){{
     ethLoopArg.port = 79;
     ethLoopArg.myIpAddr = info.ip.addr;
     int ret = xTaskCreatePinnedToCore(ethRxLoop, "eth", /*stack*/4096, (void*)&ethLoopArg, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+    if (ret != pdPASS) {
+      ESP_LOGE(TAG, "failed to create eth task");
+    }
+
+    ethRxLoopArg_t ethLoopArg2; // lifetime: below task must end before current scope is exited
+    ethLoopArg2.dataCallback = myCallback;
+    ethLoopArg2.port = 78;
+    ethLoopArg2.myIpAddr = info.ip.addr;
+    ret = xTaskCreatePinnedToCore(ethRxLoop, "eth", /*stack*/4096, (void*)&ethLoopArg2, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
       ESP_LOGE(TAG, "failed to create eth task");
     }
