@@ -39,5 +39,5 @@ returns the IP address stored in flash memory (may differ from current IP addres
 ## error messages
 ### SYNTAX_ERROR
 Unrecognized command token
-### PARAMETER_COUNT
+### ARG_COUNT
 Unexpected number of command parameters

@@ -9,3 +9,4 @@ typedef struct nvsMan_s {
 
 void nvsMan_init(nvsMan_t* self);
 uint32_t nvsMan_get_u32(nvsMan_t* self, const char* key);
+void nvsMan_set_u32(nvsMan_t* self, const char* key, uint32_t val);

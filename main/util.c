@@ -1,8 +1,20 @@
+#include <string.h>
 #include "stdio.h" // printf;
+#include "esp_netif.h" // esp_ip4addr_aton
 
 #include "util.h"
 void util_printIp(char* buf, uint32_t ip){
   sprintf(buf, "%d.%d.%d.%d", (int)(ip >> 0) & 0xFF, (int)(ip >> 8) & 0xFF, (int)(ip >> 16) & 0xFF, (int)(ip >> 24) & 0xFF);
+}
+
+int util_parseIp(const char* inp, uint32_t* outp){
+  uint32_t tmp = esp_ip4addr_aton(inp);
+  char buf[256];
+  util_printIp(buf, tmp);
+  if (strcmp(buf, inp))
+    return 0; // fail
+  *outp = tmp;
+  return 1; // success;
 }
 
 // pBegin, pEnd (non-inclusive) give next non-whitespace token
