@@ -160,7 +160,7 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 	return;
       }
       if (nBytesReceived > nBytesNextRead){
-	ESP_LOGI(TAG, "recvfrom: ?!excess data?!");
+	ESP_LOGE(TAG, "recvfrom: ?!excess data?!");
 	ESP_ERROR_CHECK(ESP_FAIL);
       }
 
@@ -168,29 +168,43 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
       state = (state + 1) & 0x1;
     
       // === scan for newline \n ===
-      int ix = nParsed;
-      while (ix < nBytesBuf){
-	if (cmdBuf[ix] != '\n'){
-	  ++nParsed;
-	  ++ix;
-	} else { // newline
+      int scanPos = nParsed;
+      while (scanPos < nBytesBuf){
+	ESP_LOGI(TAG, "scanPos %d nBytesBuf %d char %d", (int)scanPos, (int)nBytesBuf, (int)cmdBuf[scanPos]);
+	char c = cmdBuf[scanPos];
+	// robust end-of-line sequence:
+	// Windows: "\r\n"
+	// Unix: "\n"
+	// Telnet (default): "\r\n" default
+	// Telnet (alt): "\r\0"
+	// The 2nd terminating character gets suppressed the same way as leading whitespace
+	int isTermChar = (c == '\n') || (c == '\r') || (c == '\0');
+	int isLeadingWhitespace = ((c == ' ') || (c == '\t') || (c == '\v')) && (scanPos == 0);
+	if (isTermChar){
 	  if (overrun){
 	    // error has already been reported but we do salvage data following the newline
 	    overrun = 0;
 	  } else {
 	    // echo data (including newline) 
-	    send_to_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*data*/(uint8_t*)cmdBuf, /*nBytes*/ix);
-	    cmdBuf[ix] = 0; // convert newline char to C end-of-string null
+	    send_to_tcpIp(client_socket, (struct sockaddr *)&remote_addr, /*data*/(uint8_t*)cmdBuf, /*nBytes*/scanPos+1);
+	    cmdBuf[scanPos] = 0; // convert newline char to C end-of-string null
 	    arg->dataCallback(cmdBuf);
 	  }
+	}
 	
-	  // move data beyond the newline char (pos: +1; length: -1) to the head of buf
-	  memcpy(cmdBuf, cmdBuf+ix+1, nBytesBuf-nParsed-1);
-	  // after above move, continue scanning from head of buffer
-	  nBytesBuf -= ix;
-	  nParsed -= ix;
-	  ix = 0;
-	} // if newline
+	if (isTermChar || isLeadingWhitespace){
+	  // remove up to (including) scanPos from buffer:
+	  // move data beyond scanPos ("beyond": scanPos +1 and length -1) to the head of buf
+	  assert(nBytesBuf > nParsed);
+	  memcpy(cmdBuf, cmdBuf+scanPos+1, nBytesBuf-nParsed-1);
+	  
+	  nBytesBuf -= (scanPos+1);
+	  nParsed = 0;
+	  scanPos = 0;
+	} else { // regular character	  
+	  ++nParsed;
+	  ++scanPos;
+	}
       } // foreach unparsed char
     }
   }
@@ -432,7 +446,7 @@ void app_main(void){{
     ESP_ERROR_CHECK(esp_eth_start(eth_handles[0]));
 
 
-    ethRxLoopArg_t ethLoopArg;
+    ethRxLoopArg_t ethLoopArg; // lifetime: below task must end before current scope is exited
     ethLoopArg.dataCallback = myCallback;
     ethLoopArg.port = 79;
     ethLoopArg.myIpAddr = info.ip.addr;
