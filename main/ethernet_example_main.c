@@ -13,43 +13,22 @@
 #include "lwip/sockets.h"
 #include "esp_err.h"
 //#include <sys/param.h>
-#include <sys/socket.h>
+#include <sys/socket.h> // ?
 #include "driver/gpio.h"
 #include "driver/uart.h"
 
 #include "nvsMan.h"
-#include "errMan.h"
+//#include "errMan.h"
 #include "util.h"
 #include "esp_vfs_dev.h"// blocking stdin (interrupt driver)
 #include "esp_vfs.h"
-
+#include "dispatcher.h"
 static const char *TAG = "main";
-static nvsMan_t nvsMan;
-
-typedef struct ethRxLoopArg_s ethRxLoopArg_t;
-typedef struct ethRxLoopArg_s{
-  // usage:
-  // - call with new input "inp", '\0'-terminated C string
-  // - return value is reply (or NULL if no reply), '\0'-terminated C string
-  // - for non-null return value, call repeatedly with NULL input to fully retrieve response
-  // - function must terminate each line with '\n'
-  // note: multi-line response is possible e.g. long memory dump, ADC capture etc.
-  //       client may use follow-up "ECHO XYZ" with a suitable XYZ token to confirm sync afterwards
-  //       response validity is guaranteed only up to next call on any 'self' method
-  const char*(*dataCallback)(ethRxLoopArg_t* self, const char* inp);
-  uint32_t myIpAddr;
-  int port;
-  errMan_t errMan;
-  char buf[256]; // e.g. return message
-} ethRxLoopArg_t;
-
-void ethRxLoopArg_init(ethRxLoopArg_t* self){
-  errMan_init(&self->errMan);
-}
+nvsMan_t nvsMan;
 
 // === ethernet receive loop, shuts down task on disconnect ===
-static IRAM_ATTR void ethRxLoop(void* _arg){
-  ethRxLoopArg_t* arg = (ethRxLoopArg_t*)_arg;
+static IRAM_ATTR void ethernet_task(void* _arg){
+  dispatcher_t* arg = (dispatcher_t*)_arg;
 
   // === socket: create ===
   int listen_socket = -1;
@@ -99,8 +78,8 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
       ESP_LOGE(TAG, "accept: errno %d", errno);
       ESP_ERROR_CHECK(ESP_FAIL);
     }
-    ESP_LOGI(TAG, "accept: %s,%d", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
-      
+    ESP_LOGI(TAG, "eth accept: %s, %d", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
+    errMan_clear(&arg->errMan);
     //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
     //setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     
@@ -152,12 +131,12 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 	    overrun = 0;
 	  } else {
 	    cmdBuf[scanPos] = 0; // convert newline char to C end-of-string null
-	    const char* resp = arg->dataCallback(arg, cmdBuf);
+	    const char* resp = dispatcher_execCmd(arg, cmdBuf);
 	    while (resp){
 	      size_t nBytesToSend = strlen(resp);
 	      size_t nBytesSent = sendto(client_socket, resp, nBytesToSend, 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
-	      if (nBytesSent != nBytesToSend) goto disconnect; /* "break mainloop" */
-	      resp = arg->dataCallback(arg, /*indicates retrieval of additional output from last cmd*/NULL);
+	      if (nBytesSent != nBytesToSend) goto disconnect; /* "break" back into accept loop" */
+	      resp = dispatcher_execCmd(arg, /*indicates retrieval of additional output from last cmd*/NULL);
 	    } // while more output to send
 	  } // if not overrun
 	} // if termChar
@@ -177,8 +156,9 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 	}
       } // foreach unparsed char
     }
-  }
-  disconnect:
+  disconnect:;
+    ESP_LOGI(TAG, "eth disconnect");	  
+  } // while (1)
     
     ESP_LOGI(TAG, "disconnect on port %d", arg->port);
 	close(client_socket);
@@ -187,7 +167,9 @@ static IRAM_ATTR void ethRxLoop(void* _arg){
 
 }
 
-static void console_task(void *arg){
+static void console_task(void* _arg){
+  dispatcher_t* arg = (dispatcher_t*)_arg;
+  
   ESP_LOGI(TAG, "console task running");
   char buf[256];
   const int nBytesMax = 255; // need 1 char for \0
@@ -211,7 +193,21 @@ static void console_task(void *arg){
 	continue; // suppress empty line and 2nd char of \r\n
       fputc(c, stdout); // forward to console      
       buf[nBytes++] = 0; // C string termination
+
       printf("you wrote '%s'\r\n", buf); // action here
+
+      // === send reply ===
+      const char* resp = dispatcher_execCmd(arg, buf);
+      while (resp){
+	size_t nBytesToSend = strlen(resp);
+	size_t nBytesSent = uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, resp, strlen(resp));	
+	if (nBytesSent != nBytesToSend){
+	  ESP_LOGE(TAG, "uart_write_bytes");
+	  ESP_ERROR_CHECK(ESP_FAIL);
+	}
+	resp = dispatcher_execCmd(arg, /*indicates retrieval of additional output from last cmd*/NULL);
+      } // while more output to send
+      
       nBytes = 0;
       prevNBytes = 0;
     } else {
@@ -282,99 +278,6 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
   ESP_LOGI(TAG, "~~~~~~~~~~~");
 }
 
-const char* cmd_ETH_XYZ_get(ethRxLoopArg_t* self, const char* pTokenBegin, const char* pTokenEnd, const char* key){
-  if (util_tokenCount(pTokenEnd) != 0){
-    errMan_reportError(&self->errMan, "ARG_COUNT");
-    return NULL;
-  }
-
-  char tmp[20];
-  util_printIp(tmp, nvsMan_get_u32(&nvsMan, key));
-  sprintf(self->buf, "%s\n", tmp);
-  ESP_LOGI(TAG, "CMD_ETH_XYZ?(%s):%s", key, tmp);
-  return self->buf;  
-}
-
-const char* cmd_ETH_XYZ_set(ethRxLoopArg_t* self, const char* pTokenBegin, const char* pTokenEnd, const char* key){
-  if (util_tokenCount(pTokenEnd) != 1){
-    errMan_reportError(&self->errMan, "ARG_COUNT");
-    return NULL;
-  }
-  
-  const char *pArg1Begin, *pArg1End;
-  util_tokenize(pTokenEnd, &pArg1Begin, &pArg1End);
-  
-  char tmp[256];
-  util_token2cstring(pArg1Begin, pArg1End, tmp);
-  uint32_t newIp;
-  if (!util_parseIp(tmp, &newIp)){
-    errMan_reportError(&self->errMan, "ARG_PARSEAS_IP");
-  } else {
-    ESP_LOGI(TAG, "CMD_ETH_XYZ(%s):%s", key, tmp);
-    nvsMan_set_u32(&nvsMan, key, newIp);
-  }
-  return NULL;
-}	
-
-const char* myCallback(ethRxLoopArg_t* self, const char* inp){
-  if (inp){
-    // === extract command token ===
-    const char *pTokenBegin, *pTokenEnd;
-    if (util_tokenize(inp, &pTokenBegin, &pTokenEnd)){
-      if (util_tokenEquals("ECHO", pTokenBegin, pTokenEnd)){
-	// ECHO without argument returns empty line
-	// only a single whitespace character is skipped. That is, "ECHO  x" returns " x"
-	sprintf(self->buf, "%s\n", (*pTokenEnd=='\0') ? "" : pTokenEnd+1);
-	return self->buf;	
-      } else if(util_tokenEquals("ERR?", pTokenBegin, pTokenEnd)){
-	if (util_tokenCount(pTokenEnd) != 0){
-	  errMan_reportError(&self->errMan, "ARG_COUNT");
-	  return NULL;
-	}
-	
-	const char* errMsg;
-	int nErr = errMan_getError(&self->errMan, &errMsg);
-	sprintf(self->buf, "%i,%s\n", nErr, (!nErr) ? "NO_ERROR" : errMsg);	
-	return self->buf;
-      } else if(util_tokenEquals("ERRCLR", pTokenBegin, pTokenEnd)){
-	if (util_tokenCount(pTokenEnd) != 0){
-	  errMan_reportError(&self->errMan, "ARG_COUNT");
-	  return NULL;
-	}
-	const char* errMsg;
-	errMan_getError(&self->errMan, &errMsg);
-	return NULL;
-      } else if(util_tokenEquals("RESTART", pTokenBegin, pTokenEnd)){
-	if (util_tokenCount(pTokenEnd) != 0){
-	  errMan_reportError(&self->errMan, "ARG_COUNT");
-	  return NULL;
-	}
-
-	ESP_LOGI(TAG, "RESTARTing...");
-	esp_restart();
-      } else if(util_tokenEquals("ETH_IP?", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "ip");	
-      } else if(util_tokenEquals("ETH_GW?", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "gw");	
-      } else if(util_tokenEquals("ETH_MASK?", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "netmask");	
-      } else if(util_tokenEquals("ETH_IP", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "ip");	
-      } else if(util_tokenEquals("ETH_GW", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "gw");	
-      } else if(util_tokenEquals("ETH_MASK", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "netmask");	
-      } else {
-	errMan_reportError(&self->errMan, "SYNTAX_ERROR");
-      }
-    }
-    
-    sprintf(self->buf, "you wrote: '%s'\n", inp);
-    return self->buf;
-  } else {
-    return NULL;
-  }
-}
 
 void app_main(void){{
     // === install interrupt-based UART driver ===
@@ -400,7 +303,7 @@ void app_main(void){{
 
     // Create instance(s) of esp-netif for Ethernet(s)
     if (eth_port_cnt != 1){
-      ESP_LOGI(TAG, "expecting 1 ETH interface, got %d", eth_port_cnt);
+      ESP_LOGE(TAG, "expecting 1 ETH interface, got %d", eth_port_cnt);
       ESP_ERROR_CHECK(ESP_FAIL);
     }
   
@@ -430,13 +333,12 @@ void app_main(void){{
     // === start TCP/IP server threads ===
     // note: LWIP doesn't seem to have issues with multi-threaded, parallel accept() instead of a single select()
     const size_t nConnections = 4;
-    ethRxLoopArg_t tcpIpConnections[nConnections]; // lifetime: below task must end before current scope is exited    
+    dispatcher_t tcpIpConnections[nConnections+1]; // +1 for UART; lifetime: below task must end before current scope is exited    
     for (size_t ixConn = 0; ixConn < nConnections; ++ixConn){
-      ethRxLoopArg_init(&tcpIpConnections[ixConn]);
-      tcpIpConnections[ixConn].dataCallback = myCallback;
+      dispatcher_init(&tcpIpConnections[ixConn]);
       tcpIpConnections[ixConn].port = 76 + ixConn; // port range defined here
       tcpIpConnections[ixConn].myIpAddr = info.ip.addr;
-      int ret = xTaskCreatePinnedToCore(ethRxLoop, "eth", /*stack*/4096, (void*)&tcpIpConnections[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+      int ret = xTaskCreatePinnedToCore(ethernet_task, "eth", /*stack*/4096, (void*)&tcpIpConnections[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
       if (ret != pdPASS) {
 	ESP_LOGE(TAG, "failed to create eth task");
 	ESP_ERROR_CHECK(ESP_FAIL);
@@ -444,7 +346,8 @@ void app_main(void){{
     }
     
     // === start console task ===
-    int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, NULL, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+    dispatcher_init(&tcpIpConnections[nConnections]);
+    int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, (void*)&tcpIpConnections[nConnections], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
       ESP_LOGE(TAG, "failed to create console task");
       ESP_ERROR_CHECK(ESP_FAIL);
