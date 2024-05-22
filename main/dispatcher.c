@@ -79,19 +79,23 @@ const char* dispatcher_execCmd(dispatcher_t* self, const char* inp){
 	}
 
 	ESP_LOGI(TAG, "RESTARTing...");
-	esp_restart();
-      } else if(util_tokenEquals("ETH_IP?", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "ip");	
-      } else if(util_tokenEquals("ETH_GW?", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "gw");	
-      } else if(util_tokenEquals("ETH_MASK?", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "netmask");	
-      } else if(util_tokenEquals("ETH_IP", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "ip");	
-      } else if(util_tokenEquals("ETH_GW", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "gw");	
-      } else if(util_tokenEquals("ETH_MASK", pTokenBegin, pTokenEnd)){
-	return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "netmask");	
+	esp_restart();	
+      } else if(util_tokenStartsWith(pTokenBegin, pTokenEnd, "ETH:")){
+	const size_t prefixLen = 4;
+	pTokenBegin += prefixLen;
+	if(util_tokenEquals("IP?", pTokenBegin, pTokenEnd)){
+	  return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "ip");	
+	} else if(util_tokenEquals("GW?", pTokenBegin, pTokenEnd)){
+	  return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "gw");	
+	} else if(util_tokenEquals("MASK?", pTokenBegin, pTokenEnd)){
+	  return cmd_ETH_XYZ_get(self, pTokenBegin, pTokenEnd, "netmask");	
+	} else if(util_tokenEquals("IP", pTokenBegin, pTokenEnd)){
+	  return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "ip");	
+	} else if(util_tokenEquals("GW", pTokenBegin, pTokenEnd)){
+	  return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "gw");	
+	} else if(util_tokenEquals("MASK", pTokenBegin, pTokenEnd)){
+	  return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "netmask");	
+	}
       } else {
 	errMan_reportError(&self->errMan, "SYNTAX_ERROR");
       }

@@ -159,12 +159,11 @@ static IRAM_ATTR void ethernet_task(void* _arg){
   disconnect:;
     ESP_LOGI(TAG, "eth disconnect");	  
   } // while (1)
-    
-    ESP_LOGI(TAG, "disconnect on port %d", arg->port);
-	close(client_socket);
-	vTaskDelete(NULL);      
-	return;
-
+  
+  ESP_LOGI(TAG, "disconnect on port %d", arg->port);
+  close(client_socket);
+  vTaskDelete(NULL);      
+  return;  
 }
 
 static void console_task(void* _arg){

@@ -70,3 +70,27 @@ void util_token2cstring(const char* pArg1Begin, const char* pArg1End, char* dest
     *(dest++) = *(pArg1Begin++);
   *dest = '\0';  
 }
+
+int util_cstringStartsWith(const char* inp, const char* prefix){
+  while (1){
+    if (!*inp && !*prefix)
+      return 1;
+    if (*inp != *prefix)
+      return 0;
+    ++inp;
+    ++prefix;
+  }
+}
+
+int util_tokenStartsWith(const char* pBegin, const char* pEnd, const char* prefix){
+  while (1){
+    if (!*prefix)
+      return 1;
+    if (pBegin == pEnd)
+      return 0;
+    if (*pBegin != *prefix)
+      return 0; // character mismatch
+    ++pBegin;
+    ++prefix;
+  }
+}

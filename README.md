@@ -33,22 +33,22 @@ Serves multiple TCP/IP ports.
 ### RESTART
 Resets the processor, e.g. to apply new IP settings
 
-### ETH_IP?
+### ETH:IP?
 returns the static IP address stored in flash memory (may differ from actual interface setting which updates on REBOOT)
 
-### ETH_GW?
+### ETH:GW?
 returns the gateway IP address stored in flash memory (may differ from actual interface setting which updates on REBOOT)
 
-### ETH_MASK?
+### ETH:MASK?
 returns the netmask stored in flash memory (may differ from actual interface setting which updates on REBOOT)
 
-### ETH_IP xxx.xxx.xxx.xxx
+### ETH:IP xxx.xxx.xxx.xxx
 changes the static IP address stored in flash memory (actual interface setting updates on REBOOT)
 
-### ETH_GW xxx.xxx.xxx.xxx
+### ETH:GW xxx.xxx.xxx.xxx
 changes the gateway IP address stored in flash memory (actual interface setting updates on REBOOT)
 
-### ETH_MASK
+### ETH:MASK
 changes the netmask stored in flash memory (actual interface setting updates on REBOOT)
 
 ## error messages
