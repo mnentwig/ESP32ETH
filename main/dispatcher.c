@@ -118,6 +118,22 @@ dispatcher_exec_e dispatcher_exec(dispatcher_t* self, void* payload, const char*
     const dispatcherFun_t handlerPrefix = dispEntries->handlerPrefix;
     const dispatcherFun_t handlerDoSet = dispEntries->handlerDoSet;
     const dispatcherFun_t handlerGet = dispEntries->handlerGet;
+
+    char* keyCursor = key;
+    const char* inputCursor = itBegin;
+    // === scan input and key ===
+    while (true){
+      const int endOfKey = *key == '\0';
+      const int endOfInput = (inputCursor == itEnd) || (*inputCursor == ' ') || (*inputCursor == '\t') || (*inputCursor == '\v');
+      if (endOfKey && endOfInput){
+	if (handlerDoSet){
+	  return handlerDoSet(self, payload, inputCursor, itEnd);
+	}
+      }
+      const int nextInputIsQuestionmark = !endOfInput & (*(inputCursor+1) == '?');
+      const int nextInputIsColon = !endOfInput & (*(inputCursor+1) == ':');
+      
+    }
     
   }
   return EXEC_NOMATCH;
