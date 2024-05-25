@@ -26,6 +26,16 @@
 static const char *TAG = "main";
 nvsMan_t nvsMan;
 
+dispatcher_exec_e ETH_handlerPrefix(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
+dispatcher_exec_e ETH_handlerDoSet(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
+dispatcher_exec_e ETH_handlerGet(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
+dispatcher_exec_e UART_handlerPrefix(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
+
+static dispatcherEntry_t dispEntriesRootLevel[] = {
+  {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=ETH_handlerDoSet, .handlerGet=ETH_handlerGet},
+  {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL}
+};
+  
 // === ethernet receive loop, shuts down task on disconnect ===
 static IRAM_ATTR void ethernet_task(void* _arg){
   dispatcher_t* arg = (dispatcher_t*)_arg;
@@ -130,6 +140,18 @@ static IRAM_ATTR void ethernet_task(void* _arg){
 	    // error has already been reported but we do salvage data following the newline
 	    overrun = 0;
 	  } else {
+
+	    dispatcher_exec_e r = dispatcher_exec(arg, NULL, cmdBuf, cmdBuf+scanPos, dispEntriesRootLevel);
+	    switch (r){
+	    case EXEC_OK:
+	      break;
+	    case EXEC_NOMATCH:
+	      // top level SYNTAX ERROR handler here
+	      break;
+	    case EXEC_DISCONNECT:
+	      goto disconnect; /* "break" back into accept loop" */
+	    }
+	    
 	    cmdBuf[scanPos] = 0; // convert newline char to C end-of-string null
 	    const char* resp = dispatcher_execCmd(arg, cmdBuf);
 	    while (resp){
@@ -277,6 +299,11 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
   ESP_LOGI(TAG, "~~~~~~~~~~~");
 }
 
+int dispReplyFun(const char* data, size_t n){
+  ESP_LOGI(TAG, "disp_reply with %d bytes", n);
+  return 1;
+}
+
 
 void app_main(void){{
     // === install interrupt-based UART driver ===
@@ -334,7 +361,7 @@ void app_main(void){{
     const size_t nConnections = 4;
     dispatcher_t tcpIpConnections[nConnections+1]; // +1 for UART; lifetime: below task must end before current scope is exited    
     for (size_t ixConn = 0; ixConn < nConnections; ++ixConn){
-      dispatcher_init(&tcpIpConnections[ixConn]);
+      dispatcher_init(&tcpIpConnections[ixConn], &dispReplyFun);
       tcpIpConnections[ixConn].port = 76 + ixConn; // port range defined here
       tcpIpConnections[ixConn].myIpAddr = info.ip.addr;
       int ret = xTaskCreatePinnedToCore(ethernet_task, "eth", /*stack*/4096, (void*)&tcpIpConnections[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
@@ -345,7 +372,7 @@ void app_main(void){{
     }
     
     // === start console task ===
-    dispatcher_init(&tcpIpConnections[nConnections]);
+    dispatcher_init(&tcpIpConnections[nConnections], &dispReplyFun);
     int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, (void*)&tcpIpConnections[nConnections], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
       ESP_LOGE(TAG, "failed to create console task");

@@ -6,7 +6,8 @@
 extern nvsMan_t nvsMan;
 static const char *TAG = "dispatcher";
 
-void dispatcher_init(dispatcher_t* self){
+void dispatcher_init(dispatcher_t* self, int(*writeFun)(const char* data, size_t n)){
+  self->writeFun = writeFun;
   errMan_init(&self->errMan);
 }
 
@@ -107,3 +108,19 @@ const char* dispatcher_execCmd(dispatcher_t* self, const char* inp){
     return NULL;
   }
 }
+
+
+// ==================================
+
+dispatcher_exec_e dispatcher_exec(dispatcher_t* self, void* payload, const char* itBegin, const char* itEnd, dispatcherEntry_t* dispEntries){
+  while (dispEntries){
+    const char* key = dispEntries->key;
+    const dispatcherFun_t handlerPrefix = dispEntries->handlerPrefix;
+    const dispatcherFun_t handlerDoSet = dispEntries->handlerDoSet;
+    const dispatcherFun_t handlerGet = dispEntries->handlerGet;
+    
+  }
+  return EXEC_NOMATCH;
+}
+
+
