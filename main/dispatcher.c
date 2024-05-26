@@ -6,7 +6,7 @@
 //static const char *TAG = "dispatcher";
 
 void dispatcher_init(dispatcher_t* self, void* appObj, dispatcher_writeFun_t writeFn, dispatcher_readFun_t readFn, void* connSpecArg){
-  self->disconnected = 0;
+  self->connectState = 0;
   self->appObj = appObj;
   self->writeFn = writeFn;
   self->readFn = readFn;
@@ -14,11 +14,15 @@ void dispatcher_init(dispatcher_t* self, void* appObj, dispatcher_writeFun_t wri
   errMan_init(&self->errMan);
 }
 
-void dispatcher_flagDisconnect(dispatcher_t* self){
-  self->disconnected = 1;
+int dispatcher_getConnectState(dispatcher_t* self){
+  return self->connectState;
 }
 
-dispatcher_exec_e dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntries){
+void dispatcher_setConnectState(dispatcher_t* self, int connectState){
+  self->connectState = connectState;
+}
+
+int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntries){
   while (dispEntries->key){
     const char* key = dispEntries->key;
     const dispatcherFun_t handlerPrefix = dispEntries->handlerPrefix;
@@ -33,9 +37,9 @@ dispatcher_exec_e dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry
       const int endOfInput = (*inputCursor != '\0') || (*inputCursor == ' ') || (*inputCursor == '\t') || (*inputCursor == '\v');
       if (!endOfKey){
 	if (endOfInput)
-	  return EXEC_NOMATCH; // input too short
+	  return 0; // input too short
 	if (*keyCursor != *inputCursor)
-	  return EXEC_NOMATCH; // character mismatch
+	  return 0; // character mismatch
 	  
 	++keyCursor;
 	++inputCursor;
@@ -45,9 +49,9 @@ dispatcher_exec_e dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry
       if (/* implied: endOfKey &&*/endOfInput){
 	if (handlerDoSet){
 	  handlerDoSet(self, inputCursor);
-	  return self->disconnected ? EXEC_DISCONNECT : EXEC_OK;
+	  return self->connectState; // 1 unless disconnected
 	} else
-	  return EXEC_NOMATCH; // command recognized but no doSet handler
+	  return 0; // command recognized but no doSet handler
       } // if endOfInput
       
       const int nextInputIsQuestionmark = !endOfInput & (*(inputCursor+1) == '?');
@@ -55,20 +59,20 @@ dispatcher_exec_e dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry
       if (nextInputIsQuestionmark){
 	if (handlerGet){
 	  handlerGet(self, inputCursor);
-	  return self->disconnected ? EXEC_DISCONNECT : EXEC_OK;
+	  return self->connectState; // 1 unless disconnected
 	} else
-	  return EXEC_NOMATCH; // command recognized but no doSet handler
+	  return 0; // command recognized but no doSet handler
       } else if (nextInputIsColon){
 	if (handlerPrefix){
 	  handlerPrefix(self, inputCursor);
-	  return self->disconnected ? EXEC_DISCONNECT : EXEC_OK;
+	  return self->connectState; // 1 unless disconnected
 	} else
-	  return EXEC_NOMATCH; // command path recognized but no doSet handler
+	  return 0; // command path recognized but no doSet handler
       }
     } // while cursor
     ++dispEntries;
   }
-  return EXEC_NOMATCH;
+  return 0;
 }
 
 void dispatcher_reply(dispatcher_t* self, const char* str){
@@ -127,4 +131,12 @@ IRAM_ATTR int dispatcher_getArgsNull(dispatcher_t* self, char* inp){
     return 0;
   }
   return 1;
+}
+
+size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
+  return self->readFn(self->connSpecArg, buf, nMax);
+}
+
+void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes){
+  self->writeFn(self->connSpecArg, buf, nBytes);
 }

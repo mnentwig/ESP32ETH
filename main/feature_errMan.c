@@ -29,3 +29,11 @@ void errMan_clear(errMan_t* self){
 void errMan_throwARG_COUNT(errMan_t* self){
   errMan_reportError(self, "ARG_COUNT");
 }
+
+void errMan_throwSYNTAX(errMan_t* self){
+  errMan_reportError(self, "SYNTAX");
+}
+
+void errMan_throwOVERFLOW(errMan_t* self){
+  errMan_reportError(self, "OVERFLOW");
+}

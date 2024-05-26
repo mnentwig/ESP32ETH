@@ -2,7 +2,6 @@
 #include <stdint.h> // uint32_t
 #include "dispatcher.h"
 #include "lwip/sockets.h"
-//#include <sys/socket.h> // ?
 
 // usable by this specific connection, but not accessible to dispatcher
 typedef struct {

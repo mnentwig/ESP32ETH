@@ -15,7 +15,7 @@
 //#include <sys/param.h>
 #include <sys/socket.h> // ?
 #include "driver/gpio.h"
-#include "driver/uart.h"
+#include "driver/uart.h" // for driver install
 
 #include "util.h"
 #include "esp_vfs_dev.h"// blocking stdin (interrupt driver)
@@ -29,6 +29,7 @@ extern errMan_t errMan; // required feature (for dealing with incorrect input)
 #include "feature_UART.h"
 
 #include "dispatcherconn_ethernet.h"
+#include "dispatcherconn_uart.h"
 static const char *TAG = "main";
 static dispatcherEntry_t dispEntriesRootLevel[] = {
   {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL},
@@ -37,76 +38,6 @@ static dispatcherEntry_t dispEntriesRootLevel[] = {
 };
 
 
-#if 0
-static void console_task(void* _arg){
-  dispatcher_t* arg = (dispatcher_t*)_arg;
-  
-  ESP_LOGI(TAG, "console task running");
-  char buf[256];
-  const int nBytesMax = 255; // need 1 char for \0
-  int nBytes = 0;
-  int prevNBytes = 0;
-
-  fcntl(fileno(stdout), F_SETFL, 0);
-  fcntl(fileno(stdin), F_SETFL, 0);
-  while (1){
-
-    char c;
-    const int nReceived = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, &c, /*nBytes*/1, /*timeout*/1000 / portTICK_PERIOD_MS);
-    if (!nReceived)
-      continue;
-    if ((c == 0x08) && nBytes){ // backspace deletes
-      --nBytes;
-    } else if (c == 27){// ESC key
-      nBytes = 0; // clears line
-    } else if ((c == '\r') || (c == '\n')){
-      if (!nBytes)
-	continue; // suppress empty line and 2nd char of \r\n
-      fputc(c, stdout); // forward to console      
-      buf[nBytes++] = 0; // C string termination
-
-      printf("you wrote '%s'\r\n", buf); // action here
-
-      // === send reply ===
-      const char* resp = dispatcher_execCmd(arg, buf);
-      while (resp){
-	size_t nBytesToSend = strlen(resp);
-	size_t nBytesSent = uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, resp, strlen(resp));	
-	if (nBytesSent != nBytesToSend){
-	  ESP_LOGE(TAG, "uart_write_bytes");
-	  ESP_ERROR_CHECK(ESP_FAIL);
-	}
-	resp = dispatcher_execCmd(arg, /*indicates retrieval of additional output from last cmd*/NULL);
-      } // while more output to send
-      
-      nBytes = 0;
-      prevNBytes = 0;
-    } else {
-      if (!nBytes && ((c == ' ') || (c == '\t')))
-	continue; // suppress leading whitespace
-      if (nBytes == nBytesMax) // full buffer keeps changing last char
-	--nBytes;
-      
-      buf[nBytes++] = c; // other chars append
-    }
-    
-    // === overwrite past line if it gets shorter ===
-    // note: clearing first to put cursor into correct place
-    if (nBytes < prevNBytes){
-      fputc('\r', stdout);
-      for (int ix = 0; ix < prevNBytes; ++ix)
-	fputc(' ', stdout);
-    }
-
-    // === write current line ===
-    fputc('\r', stdout);
-    for (int ix = 0; ix < nBytes; ++ix)
-      fputc(buf[ix], stdout);
-    fflush(stdout);
-    prevNBytes = nBytes;
-  }
-}
-#endif
 /** Event handler for Ethernet events */
 static void eth_event_handler(void *arg, esp_event_base_t event_base,
 			      int32_t event_id, void *event_data){
@@ -203,12 +134,12 @@ void app_main(void){{
     // === start TCP/IP server threads ===
     // note: LWIP doesn't seem to have issues with multi-threaded, parallel accept() instead of a single select()
     const size_t nConnections = 4;
-    dispatcher_t dispatchers[nConnections+1]; // +1 for UART; lifetime: below task must end before current scope is exited
-
+    dispatcher_t ethDispatchers[nConnections]; //lifetime: below task must end before current scope is exited
+    
     dpConnEthArgs_t etArgs[nConnections];
     for (size_t ixConn = 0; ixConn < nConnections; ++ixConn){
-      dpConnEthArgs_init(&etArgs[ixConn], &dispatchers[ixConn], /*port*/76+ixConn, /*myIpAddr*/info.ip.addr, /*userArg*/NULL, &dispEntriesRootLevel[0]);
-      dispatcher_init(&dispatchers[ixConn], /*appObj*/NULL, dpConnEth_write, dpConnEth_read, (void*)&etArgs[ixConn]);
+      dpConnEthArgs_init(&etArgs[ixConn], &ethDispatchers[ixConn], /*port*/76+ixConn, /*myIpAddr*/info.ip.addr, /*userArg*/NULL, &dispEntriesRootLevel[0]);
+      dispatcher_init(&ethDispatchers[ixConn], /*appObj*/NULL, dpConnEth_write, dpConnEth_read, (void*)&etArgs[ixConn]);
       
       int ret = xTaskCreatePinnedToCore(dpConnEth_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
       if (ret != pdPASS) {
@@ -217,15 +148,17 @@ void app_main(void){{
       }
     }
     
-#if 0
     // === start console task ===
-    dispatcher_init(&dispatchers[nConnections], &dispReplyFun);
-    int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, (void*)&dispatchers[nConnections], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+    dispatcher_t uartDispatcher; //lifetime: below task must end before current scope is exited	
+    dpConnUartArgs_t uartArgs;
+    
+    dpConnUartArgs_init(&uartArgs, &uartDispatcher, CONFIG_ESP_CONSOLE_UART_NUM, /*userArg*/NULL, &dispEntriesRootLevel[0]);
+    dispatcher_init(&uartDispatcher, /*appObj*/NULL, dpConnUart_write, dpConnUart_read, (void*)&uartArgs);
+    int ret = xTaskCreatePinnedToCore(dpConnUart_task, "uart", /*stack*/4096, (void*)&uartArgs, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
-      ESP_LOGE(TAG, "failed to create console task");
+      ESP_LOGE(TAG, "failed to create uart task");
       ESP_ERROR_CHECK(ESP_FAIL);
     }
-#endif
     
     while (1){
       vTaskDelay(1000/portTICK_PERIOD_MS);

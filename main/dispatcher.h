@@ -28,19 +28,21 @@ typedef struct dispatcher_s{
   void* connSpecArg;
   dispatcher_writeFun_t writeFn;
   dispatcher_readFun_t readFn;
-  int disconnected;
+  int connectState;
 } dispatcher_t;
 
 void dispatcher_init(dispatcher_t* self, void* appObj, dispatcher_writeFun_t writeFnc, dispatcher_readFun_t readFnc, void* connSpecArg);
 
-typedef enum {EXEC_OK, EXEC_NOMATCH, EXEC_DISCONNECT} dispatcher_exec_e;
+int dispatcher_getConnectState(dispatcher_t* self);
+void dispatcher_setConnectState(dispatcher_t* self, int connectState);
+
 // called by command feed for parsing
-dispatcher_exec_e dispatcher_exec
+// returns 1 if command was recognized, 0 otherwise
+int dispatcher_exec
 (dispatcher_t* self, // dispatcher state e.g. funcptr to write return data
  char* input, // input data start. Note, contents get modified ('\0' insertion)
  dispatcherEntry_t* dispEntries // NULL-terminated list of keywords to match (one level of parse tree)
  );
-void dispatcher_flagDisconnect(dispatcher_t* self);
 
 // shorthand for calling self->writeFun on C string
 void dispatcher_reply(dispatcher_t* self, const char* str);
@@ -51,3 +53,9 @@ void dispatcher_reply(dispatcher_t* self, const char* str);
 // 0 otherwise, with appropriate error in errMan
 // note: input is modified (string terminations)
 int dispatcher_getArgsNull(dispatcher_t* self, char* inp);
+
+// reads from connection, between 1 and nMax bytes (blocking)
+size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax);
+
+// writes data to connection (blocking)
+void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes);

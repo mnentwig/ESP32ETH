@@ -20,7 +20,7 @@ void dpConnEth_write(void* _arg, const char* data, size_t nBytes){
     int nBytesSent = sendto(args->client_socket, data, nBytes, 0, (struct sockaddr *)&args->remote_addr, sizeof(struct sockaddr_in));
     if (nBytesSent < 0){
       ESP_LOGI(TAG, "disconnect during write on port %d", args->port);
-      dispatcher_flagDisconnect(args->disp);
+      dispatcher_setConnectState(args->disp, 0);
       return;
     }
     if (nBytesSent == nBytes)
@@ -42,7 +42,7 @@ int dpConnEth_read(void* _arg, char* data, size_t nBytesMax){
   n = n ? n : 1; // read at least one byte
   int nBytesReceived = recv(args->client_socket, data, n, /*blocking read*/0);
   if (nBytesReceived < 0){
-    dispatcher_flagDisconnect(args->disp);
+    dispatcher_setConnectState(args->disp, 0);
     ESP_LOGI(TAG, "disconnect during read on port %d", args->port);
     return 0;
   }
@@ -52,6 +52,7 @@ int dpConnEth_read(void* _arg, char* data, size_t nBytesMax){
 // === ethernet receive loop, shuts down task on disconnect ===
 void dpConnEth_task(void* _arg){
   dpConnEthArgs_t* etArgs = (dpConnEthArgs_t*)_arg;
+  ESP_LOGI(TAG, "task running");
   
   // === socket: create ===
   int listen_socket = -1;
@@ -102,6 +103,7 @@ void dpConnEth_task(void* _arg){
     errMan_clear(&etArgs->disp->errMan);
     etArgs->client_socket = client_socket;
     etArgs->remote_addr = remote_addr;
+    dispatcher_setConnectState(etArgs->disp, 1);
     
     const uint32_t nBytesMax = 255; // +1 for C string zero termination
     uint32_t nBytesBuf = 0;
@@ -124,12 +126,13 @@ void dpConnEth_task(void* _arg){
       }
 
       int nBytesReceived = recv(client_socket, cmdBuf+nBytesBuf, nBytesNextRead, flags);
+      if (!dispatcher_getConnectState(etArgs->disp)) goto disconnect; /* "break mainloop" */
       if (nBytesReceived < 0) goto disconnect; /* "break mainloop" */
       if (nBytesReceived > nBytesNextRead){
 	ESP_LOGE(TAG, "recvfrom: ?!excess data?!");
 	ESP_ERROR_CHECK(ESP_FAIL);
       }
-
+      
       nBytesBuf += nBytesReceived;
       state = (state + 1) & 0x1;
       
@@ -151,16 +154,12 @@ void dpConnEth_task(void* _arg){
 	    overrun = 0;
 	  } else {
 	    cmdBuf[scanPos] = '\0'; // convert input to standard C null-terminated string
-	    dispatcher_exec_e r = dispatcher_exec(etArgs->disp, cmdBuf, etArgs->parseRoot);
-	    switch (r){
-	    case EXEC_OK:
-	      break;
-	    case EXEC_NOMATCH:
-	      // top level SYNTAX ERROR handler here
-	      break;
-	    case EXEC_DISCONNECT:
+	    int r = dispatcher_exec(etArgs->disp, cmdBuf, etArgs->parseRoot);
+	    if (!dispatcher_getConnectState(etArgs->disp))
 	      goto disconnect; /* "break" back into accept loop" */
-	    }
+	    if (!r)
+	      errMan_throwSYNTAX(&etArgs->disp->errMan);
+	    break;
 	  } // if not overrun
 	} // if termChar
 	
@@ -178,10 +177,10 @@ void dpConnEth_task(void* _arg){
 	  ++scanPos;
 	}
       } // foreach unparsed char
-    }
+    } // while connection
   disconnect:;
-    ESP_LOGI(TAG, "eth disconnect");	  
-  } // while (1)
+    ESP_LOGI(TAG, "eth disconnect");
+  } // while 
   
   // close(client_socket);
   // vTaskDelete(NULL);      

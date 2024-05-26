@@ -44,6 +44,7 @@ static dispatcherEntry_t ETH_dispEntries[] = {
   {.key="IP", .handlerPrefix=NULL, .handlerDoSet=ETH_IP_handlerDoSet, .handlerGet=ETH_IP_handlerGet},
   {.key="GW", .handlerPrefix=NULL, .handlerDoSet=ETH_GW_handlerDoSet, .handlerGet=ETH_GW_handlerGet},
   {.key="MASK", .handlerPrefix=NULL, .handlerDoSet=ETH_MASK_handlerDoSet, .handlerGet=ETH_MASK_handlerGet},
+  {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL} // end marker
 };
 
 void ETH_handlerPrefix(dispatcher_t* disp, char* inp){
