@@ -37,7 +37,7 @@ typedef enum {EXEC_OK, EXEC_NOMATCH, EXEC_DISCONNECT} dispatcher_exec_e;
 // called by command feed for parsing
 dispatcher_exec_e dispatcher_exec
 (dispatcher_t* self, // dispatcher state e.g. funcptr to write return data
- const char* input, // input data start
+ char* input, // input data start. Note, contents get modified ('\0' insertion)
  dispatcherEntry_t* dispEntries // NULL-terminated list of keywords to match (one level of parse tree)
  );
 void dispatcher_flagDisconnect(dispatcher_t* self);

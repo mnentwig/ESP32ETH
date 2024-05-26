@@ -1,4 +1,4 @@
-idf_component_register(SRCS "ethernet_example_main.c" "feature_nvsMan.c" "feature_errMan.c" "util.c" "dispatcher.c" "feature_ETH.c" "feature_UART.c"
+idf_component_register(SRCS "ethernet_example_main.c" "feature_nvsMan.c" "feature_errMan.c" "util.c" "dispatcher.c" "feature_ETH.c" "feature_UART.c" "dispatcherconn_ethernet.c"
                        INCLUDE_DIRS "."
 		       REQUIRES ethernet_init
 		       REQUIRES nvs_flash

@@ -18,15 +18,15 @@ void dispatcher_flagDisconnect(dispatcher_t* self){
   self->disconnected = 1;
 }
 
-dispatcher_exec_e dispatcher_exec(dispatcher_t* self, const char* inp, dispatcherEntry_t* dispEntries){
-  while (dispEntries){
+dispatcher_exec_e dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntries){
+  while (dispEntries->key){
     const char* key = dispEntries->key;
     const dispatcherFun_t handlerPrefix = dispEntries->handlerPrefix;
     const dispatcherFun_t handlerDoSet = dispEntries->handlerDoSet;
     const dispatcherFun_t handlerGet = dispEntries->handlerGet;
 
     const char* keyCursor = key;
-    const char* inputCursor = inp;
+    char* inputCursor = inp;
     // === scan input and key ===
     while (1){
       const int endOfKey = *keyCursor == '\0';
@@ -65,8 +65,9 @@ dispatcher_exec_e dispatcher_exec(dispatcher_t* self, const char* inp, dispatche
 	} else
 	  return EXEC_NOMATCH; // command path recognized but no doSet handler
       }
-    } // if endOfKey
-  } // while cursor
+    } // while cursor
+    ++dispEntries;
+  }
   return EXEC_NOMATCH;
 }
 
