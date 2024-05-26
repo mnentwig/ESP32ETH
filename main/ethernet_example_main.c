@@ -17,29 +17,83 @@
 #include "driver/gpio.h"
 #include "driver/uart.h"
 
-#include "nvsMan.h"
-//#include "errMan.h"
 #include "util.h"
 #include "esp_vfs_dev.h"// blocking stdin (interrupt driver)
 #include "esp_vfs.h"
+#include "feature_nvsMan.h"
+#include "feature_errMan.h"
+nvsMan_t nvsMan; // required feature (for accessing NVS)
+extern errMan_t errMan; // required feature (for dealing with incorrect input)
 #include "dispatcher.h"
+#include "feature_ETH.h"
+#include "feature_UART.h"
 static const char *TAG = "main";
-nvsMan_t nvsMan;
-
-dispatcher_exec_e ETH_handlerPrefix(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
-dispatcher_exec_e ETH_handlerDoSet(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
-dispatcher_exec_e ETH_handlerGet(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
-dispatcher_exec_e UART_handlerPrefix(dispatcher_t* disp, void* payload, const char* itBegin, const char* itEnd);
-
 static dispatcherEntry_t dispEntriesRootLevel[] = {
-  {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=ETH_handlerDoSet, .handlerGet=ETH_handlerGet},
+  {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL},
   {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL}
 };
+
+typedef struct {
+  dispatcher_t* disp;
+  int port;
+  uint32_t myIpAddr;
+  void* userArg; // note: userArg would typically keep own pointer to dispatcher
+
+  int client_socket;
+  struct sockaddr_in remote_addr;
+} ethernetSpecificArgs_t;
+
+void ethernetSpecificArgs_init(ethernetSpecificArgs_t* self, dispatcher_t* disp, int port, uint32_t myIpAddr, void* userArg){
+  self->disp = disp;
+  self->port = port;
+  self->myIpAddr = myIpAddr;
+  self->userArg = userArg;
+}
+
+void ethernetSpecificArgs_setConn(ethernetSpecificArgs_t* self, int client_socket, struct sockaddr_in remote_addr){
+  self->client_socket = client_socket;
+  self->remote_addr = remote_addr;
+}
+
+static IRAM_ATTR void ethernet_write(void* _arg, const char* data, size_t nBytes){
+  ethernetSpecificArgs_t* args = (ethernetSpecificArgs_t*)_arg;
+  while (1){
+    int nBytesSent = sendto(args->client_socket, data, nBytes, 0, (struct sockaddr *)&args->remote_addr, sizeof(struct sockaddr_in));
+    if (nBytesSent < 0){
+      ESP_LOGI(TAG, "disconnect during write on port %d", args->port);
+      dispatcher_flagDisconnect(args->disp);
+      return;
+    }
+    if (nBytesSent == nBytes)
+      return; // OK
+    assert(nBytesSent < nBytes);
+    nBytes -= nBytesSent;
+    data += nBytesSent;    
+  }
+}
+
+static IRAM_ATTR int ethernet_read(void* _arg, char* data, size_t nBytesMax){
+  ethernetSpecificArgs_t* args = (ethernetSpecificArgs_t*)_arg;
+  assert(nBytesMax > 0);
   
+  // IOCTL needs CONFIG_LWIP_SO_RCVBUF  
+  size_t nBytesAvailable;
+  ioctl(args->client_socket, FIONREAD, &nBytesAvailable);
+  size_t n = nBytesMax < nBytesAvailable ? nBytesMax : nBytesAvailable;
+  n = n ? n : 1; // read at least one byte
+  int nBytesReceived = recv(args->client_socket, data, n, /*blocking read*/0);
+  if (nBytesReceived < 0){
+    dispatcher_flagDisconnect(args->disp);
+    ESP_LOGI(TAG, "disconnect during read on port %d", args->port);
+    return 0;
+  }
+  return nBytesReceived;
+}
+
 // === ethernet receive loop, shuts down task on disconnect ===
 static IRAM_ATTR void ethernet_task(void* _arg){
-  dispatcher_t* arg = (dispatcher_t*)_arg;
-
+  ethernetSpecificArgs_t* etArgs = (ethernetSpecificArgs_t*)_arg;
+  
   // === socket: create ===
   int listen_socket = -1;
   int client_socket = -1;
@@ -52,8 +106,8 @@ static IRAM_ATTR void ethernet_task(void* _arg){
   struct sockaddr_in listen_addr4 = { 0 };
   
   listen_addr4.sin_family = AF_INET;
-  listen_addr4.sin_port = htons(arg->port);
-  listen_addr4.sin_addr.s_addr = arg->myIpAddr;
+  listen_addr4.sin_port = htons(etArgs->port);
+  listen_addr4.sin_addr.s_addr = etArgs->myIpAddr;
   
   listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (listen_socket < 0){
@@ -61,7 +115,7 @@ static IRAM_ATTR void ethernet_task(void* _arg){
     ESP_ERROR_CHECK(ESP_FAIL);
   }    
   setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-  ESP_LOGI(TAG, "Socket created for port %d", arg->port);
+  ESP_LOGI(TAG, "Socket created for port %d", etArgs->port);
   
   // === socket: bind ===
   err = bind(listen_socket, (struct sockaddr *)&listen_addr4, sizeof(listen_addr4));
@@ -77,21 +131,17 @@ static IRAM_ATTR void ethernet_task(void* _arg){
     ESP_ERROR_CHECK(ESP_FAIL);
   }
   memcpy(&listen_addr, &listen_addr4, sizeof(listen_addr4));
-
+  
   // === socket accept loop ===
   while (1){
-    //struct timeval timeout = { 0 };
-    //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
-    //setsockopt(listen_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     client_socket = accept(listen_socket, (struct sockaddr *)&remote_addr, &addr_len);
     if (client_socket < 0){
       ESP_LOGE(TAG, "accept: errno %d", errno);
       ESP_ERROR_CHECK(ESP_FAIL);
     }
     ESP_LOGI(TAG, "eth accept: %s, %d", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
-    errMan_clear(&arg->errMan);
-    //timeout.tv_sec = IPERF_SOCKET_RX_TIMEOUT;
-    //setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    errMan_clear(&etArgs->disp->errMan);
+    ethernetSpecificArgs_setConn(etArgs, client_socket, remote_addr);
     
     const uint32_t nBytesMax = 255; // +1 for C string zero termination
     uint32_t nBytesBuf = 0;
@@ -103,10 +153,10 @@ static IRAM_ATTR void ethernet_task(void* _arg){
       int blockingRead = !(state & 0x1);
       uint32_t nBytesNextRead = blockingRead ? 1 : nBytesMax - nBytesBuf;
       uint32_t flags = blockingRead ? 0 : /*non-blocking*/MSG_DONTWAIT;
-
+      
       if (nBytesNextRead == 0){
 	if (!overrun){
-	  errMan_reportError(&arg->errMan, "max cmd length exceeded");
+	  errMan_reportError(&etArgs->disp->errMan, "max cmd length exceeded");
 	  overrun = 1;
 	}
 	nBytesBuf = 0;
@@ -122,7 +172,7 @@ static IRAM_ATTR void ethernet_task(void* _arg){
 
       nBytesBuf += nBytesReceived;
       state = (state + 1) & 0x1;
-    
+      
       // === scan for newline \n ===
       int scanPos = nParsed;
       while (scanPos < nBytesBuf){
@@ -140,8 +190,8 @@ static IRAM_ATTR void ethernet_task(void* _arg){
 	    // error has already been reported but we do salvage data following the newline
 	    overrun = 0;
 	  } else {
-
-	    dispatcher_exec_e r = dispatcher_exec(arg, NULL, cmdBuf, cmdBuf+scanPos, dispEntriesRootLevel);
+	    cmdBuf[scanPos] = '\0'; // convert input to standard C null-terminated string
+	    dispatcher_exec_e r = dispatcher_exec(etArgs->disp, cmdBuf, dispEntriesRootLevel);
 	    switch (r){
 	    case EXEC_OK:
 	      break;
@@ -151,15 +201,6 @@ static IRAM_ATTR void ethernet_task(void* _arg){
 	    case EXEC_DISCONNECT:
 	      goto disconnect; /* "break" back into accept loop" */
 	    }
-	    
-	    cmdBuf[scanPos] = 0; // convert newline char to C end-of-string null
-	    const char* resp = dispatcher_execCmd(arg, cmdBuf);
-	    while (resp){
-	      size_t nBytesToSend = strlen(resp);
-	      size_t nBytesSent = sendto(client_socket, resp, nBytesToSend, 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
-	      if (nBytesSent != nBytesToSend) goto disconnect; /* "break" back into accept loop" */
-	      resp = dispatcher_execCmd(arg, /*indicates retrieval of additional output from last cmd*/NULL);
-	    } // while more output to send
 	  } // if not overrun
 	} // if termChar
 	
@@ -182,12 +223,11 @@ static IRAM_ATTR void ethernet_task(void* _arg){
     ESP_LOGI(TAG, "eth disconnect");	  
   } // while (1)
   
-  ESP_LOGI(TAG, "disconnect on port %d", arg->port);
-  close(client_socket);
-  vTaskDelete(NULL);      
-  return;  
+  // close(client_socket);
+  // vTaskDelete(NULL);      
 }
 
+#if 0
 static void console_task(void* _arg){
   dispatcher_t* arg = (dispatcher_t*)_arg;
   
@@ -256,7 +296,7 @@ static void console_task(void* _arg){
     prevNBytes = nBytes;
   }
 }
-
+#endif
 /** Event handler for Ethernet events */
 static void eth_event_handler(void *arg, esp_event_base_t event_base,
 			      int32_t event_id, void *event_data){
@@ -298,12 +338,6 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
   ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
   ESP_LOGI(TAG, "~~~~~~~~~~~");
 }
-
-int dispReplyFun(const char* data, size_t n){
-  ESP_LOGI(TAG, "disp_reply with %d bytes", n);
-  return 1;
-}
-
 
 void app_main(void){{
     // === install interrupt-based UART driver ===
@@ -359,25 +393,28 @@ void app_main(void){{
     // === start TCP/IP server threads ===
     // note: LWIP doesn't seem to have issues with multi-threaded, parallel accept() instead of a single select()
     const size_t nConnections = 4;
-    dispatcher_t tcpIpConnections[nConnections+1]; // +1 for UART; lifetime: below task must end before current scope is exited    
+    dispatcher_t dispatchers[nConnections+1]; // +1 for UART; lifetime: below task must end before current scope is exited
+    ethernetSpecificArgs_t etArgs[nConnections];
     for (size_t ixConn = 0; ixConn < nConnections; ++ixConn){
-      dispatcher_init(&tcpIpConnections[ixConn], &dispReplyFun);
-      tcpIpConnections[ixConn].port = 76 + ixConn; // port range defined here
-      tcpIpConnections[ixConn].myIpAddr = info.ip.addr;
-      int ret = xTaskCreatePinnedToCore(ethernet_task, "eth", /*stack*/4096, (void*)&tcpIpConnections[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+      ethernetSpecificArgs_init(&etArgs[ixConn], &dispatchers[ixConn], /*port*/76+ixConn, /*myIpAddr*/info.ip.addr, /*userArg*/NULL);
+      dispatcher_init(&dispatchers[ixConn], /*appObj*/NULL, ethernet_write, ethernet_read, (void*)&etArgs[ixConn]);
+      
+      int ret = xTaskCreatePinnedToCore(ethernet_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
       if (ret != pdPASS) {
 	ESP_LOGE(TAG, "failed to create eth task");
 	ESP_ERROR_CHECK(ESP_FAIL);
       }
     }
     
+#if 0
     // === start console task ===
-    dispatcher_init(&tcpIpConnections[nConnections], &dispReplyFun);
-    int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, (void*)&tcpIpConnections[nConnections], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+    dispatcher_init(&dispatchers[nConnections], &dispReplyFun);
+    int ret = xTaskCreatePinnedToCore(console_task, "myConsole", /*stack*/4096, (void*)&dispatchers[nConnections], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
       ESP_LOGE(TAG, "failed to create console task");
       ESP_ERROR_CHECK(ESP_FAIL);
     }
+#endif
     
     while (1){
       vTaskDelay(1000/portTICK_PERIOD_MS);
