@@ -3,7 +3,7 @@
 #include "util.h"
 #include <string.h> // strlen
 
-//static const char *TAG = "dispatcher";
+static const char *TAG = "dispatcher";
 
 void dispatcher_init(dispatcher_t* self, void* appObj, dispatcher_writeFun_t writeFn, dispatcher_readFun_t readFn, void* connSpecArg){
   self->connectState = 0;
@@ -23,6 +23,7 @@ void dispatcher_setConnectState(dispatcher_t* self, int connectState){
 }
 
 int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntries){
+  ESP_LOGI(TAG, "exec on (%s)", inp);
   while (dispEntries->key){
     const char* key = dispEntries->key;
     const dispatcherFun_t handlerPrefix = dispEntries->handlerPrefix;
@@ -34,42 +35,64 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
     // === scan input and key ===
     while (1){
       const int endOfKey = *keyCursor == '\0';
-      const int endOfInput = (*inputCursor != '\0') || (*inputCursor == ' ') || (*inputCursor == '\t') || (*inputCursor == '\v');
+      const int endOfInput = (*inputCursor == '\0') || (*inputCursor == ' ') || (*inputCursor == '\t') || (*inputCursor == '\v');
       if (!endOfKey){
-	if (endOfInput)
-	  return 0; // input too short
-	if (*keyCursor != *inputCursor)
-	  return 0; // character mismatch
-	  
+	if (endOfInput){
+	  ESP_LOGI(TAG, "input (%s) is shorter than key (%s)", inp, key);
+	  goto breakNextDispEntry; // input too short
+	}
+	if (*keyCursor != *inputCursor){
+	  ESP_LOGI(TAG, "input (%s) differs from key (%s)", inp, key);
+	  goto breakNextDispEntry;
+	}	  
 	++keyCursor;
 	++inputCursor;
 	continue;
       } // if not end-of-key
-      
+
+      ESP_LOGI(TAG, "input (%s) contains key (%s)", inp, key);
+
       if (/* implied: endOfKey &&*/endOfInput){
 	if (handlerDoSet){
+	  ESP_LOGI(TAG, "handlerDoSet (%s)", inp);
 	  handlerDoSet(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
-	} else
-	  return 0; // command recognized but no doSet handler
+	} else {
+	  ESP_LOGI(TAG, "handlerDoSet (%s) is NULL", inp);
+	  return 0;
+	}
       } // if endOfInput
+
+      // here, inputCursor points to the first unparsed character or '\0'
       
-      const int nextInputIsQuestionmark = !endOfInput & (*(inputCursor+1) == '?');
-      const int nextInputIsColon = !endOfInput & (*(inputCursor+1) == ':');
+      const int nextInputIsQuestionmark = (*inputCursor == '?');
+      const int nextInputIsColon = (*inputCursor == ':');
       if (nextInputIsQuestionmark){
+	++inputCursor; // skip over "?"
 	if (handlerGet){
+	  ESP_LOGI(TAG, "handlerGet for key (%s)", key);
 	  handlerGet(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
-	} else
-	  return 0; // command recognized but no doSet handler
+	} else{
+	  ESP_LOGI(TAG, "handlerGet for key (%s) is NULL", key);
+	  return 0;
+	}
       } else if (nextInputIsColon){
+	++inputCursor; // skip over ":"
 	if (handlerPrefix){
+	  ESP_LOGI(TAG, "handlerPrefix for key (%s)", key);
 	  handlerPrefix(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
-	} else
-	  return 0; // command path recognized but no doSet handler
+	} else {
+	  ESP_LOGI(TAG, "handlerPrefix for key (%s) is NULL", key);
+	  return 0;
+	}
+      } else {
+	ESP_LOGI(TAG, "substring match, ignoring");	
+	goto breakNextDispEntry;
       }
     } // while cursor
+  breakNextDispEntry:
     ++dispEntries;
   }
   return 0;
