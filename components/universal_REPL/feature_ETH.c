@@ -24,7 +24,7 @@ static void ETH_XYZ_handlerGet(dispatcher_t* disp, char* inp, ETH_variant_e v){
   case VAR_MASK: key = "netmask"; break;
   }
   util_printIp(tmp, nvsMan_get_u32(&nvsMan, key));
-  ESP_LOGI(TAG, "CMD_ETH_XYZ?(%s):%s", key, tmp);
+  // ESP_LOGI(TAG, "CMD_ETH_XYZ?(%s):%s", key, tmp);
   dispatcher_connWriteCString(disp, tmp);  
 }
 
@@ -55,12 +55,12 @@ static void ETH_XYZ_handlerDoSet(dispatcher_t* disp, char* inp, ETH_variant_e v)
   if (!dispatcher_parseArg_IP(disp, args[0], &ip))
     return;
   
-  ESP_LOGI(TAG, "CMD_ETH_XYZ(%s):%s", nvsKey, args[0]);
+  // ESP_LOGI(TAG, "CMD_ETH_XYZ(%s):%s", nvsKey, args[0]);
   nvsMan_set_u32(&nvsMan, nvsKey, ip);
 }
 
 static void ETH_IP_handlerDoSet(dispatcher_t* disp, char* inp){
-  ESP_LOGI(TAG, "CMD_ETH_IP (%s)", inp);
+  // ESP_LOGI(TAG, "CMD_ETH_IP (%s)", inp);
   ETH_XYZ_handlerDoSet(disp, inp, VAR_IP);
 }
 static void ETH_GW_handlerDoSet(dispatcher_t* disp, char* inp){

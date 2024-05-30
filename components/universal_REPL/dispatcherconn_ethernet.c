@@ -100,6 +100,18 @@ void dpConnEth_task(void* _arg){
       ESP_ERROR_CHECK(ESP_FAIL);
     }
     ESP_LOGI(TAG, "eth accept: %s, %d", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
+
+    int flag = 1;
+    int result = setsockopt(client_socket,            /* socket affected */
+			    IPPROTO_TCP,     /* set option at TCP level */
+			    TCP_NODELAY,     /* name of option */
+			    (char *) &flag,  /* the cast is historical cruft */
+			    sizeof(int));    /* length of option value */
+    if (result < 0){
+      ESP_LOGE(TAG, "setsockopt");
+      ESP_ERROR_CHECK(ESP_FAIL);
+    }
+    
     errMan_clear(&etArgs->disp->errMan);
     etArgs->client_socket = client_socket;
     etArgs->remote_addr = remote_addr;

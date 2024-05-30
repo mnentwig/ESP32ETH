@@ -1,4 +1,5 @@
 // compile using e.g. MINGW on windows
+// g++ windowsTestapp.c -lWs2_32
 #define WIN32_LEAN_AND_MEAN
 #define NOSOUND
 #include <windows.h>
@@ -24,6 +25,30 @@ void initWinsock(){
   
   err = WSAStartup(wVersionRequested, &wsaData);  
   if (err) fail("WSAStartup");
+}
+
+void write(SOCKET s, const char* msg){
+  char buf[65536];
+  sprintf(buf, "%s\n", msg);
+  int count = send(s, buf, strlen(buf), 0);
+  if (count == SOCKET_ERROR) fail("send: SOCKET_ERROR");
+}
+
+char buf[65536];
+char* read(SOCKET s){
+  char* p = buf;
+  while (1){
+    int n = recv(s, p, 1, 0);
+    if (n <= 0) fail("recv");
+    if ((*p == '\n') || (*p == '\r') || (*p == '\0'))
+      break;
+    ++p;
+  }
+  *p = '\0';
+  p = buf;
+  while ((*p == '\n') || (*p == '\r') || (*p == ' ') || (*p == '\t'))
+    ++p;
+  return p;
 }
 
 int main(void){
@@ -62,12 +87,12 @@ int main(void){
 	      sizeof(struct sockaddr_in)) == SOCKET_ERROR){ 
     fail("connect");
   }
+  printf("connected\n"); fflush(stdout);
 
-  const char* msg = "ETH:IP?";
-  char buf[256];
-  int count = send(s, msg, strlen(msg), 0);
-  if (count == SOCKET_ERROR) fail("send: SOCKET_ERROR");
-  int n = recv(s, buf, 1, 0);
-  printf("received %i\n", n);
+  for (size_t ix = 0; ix < 100; ++ix){
+    write(s, "ETH:IP?");
+    char* b = read(s);    
+    printf("%i received %s\n", ix, b);
+  }
   exit(EXIT_SUCCESS);
 }

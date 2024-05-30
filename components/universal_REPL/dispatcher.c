@@ -30,7 +30,7 @@ void inputAsciiBuf_getBufSpace(inputAsciiBuf_t* self, char** p, size_t* nBytesFr
 }
 void inputAsciiBuf_applyNextRead(inputAsciiBuf_t* self, size_t nBytes){
   self->nBytes += nBytes;
-  ESP_LOGI(TAG, "asciiBuf now %d bytes", self->nBytes);
+  //ESP_LOGI(TAG, "asciiBuf now %d bytes", self->nBytes);
   assert(self->nBytes <= self->nBytesMax);
 }
 
@@ -81,7 +81,7 @@ char* inputAsciiBuf_extractNextCmd(inputAsciiBuf_t* self){
       if (self->overflow)
 	break;
       else{
-	ESP_LOGI(TAG, "asciiBuf cmd '%s'", r);
+	//ESP_LOGI(TAG, "asciiBuf cmd '%s'", r);
 	return r;
       }
     } else {
@@ -90,7 +90,7 @@ char* inputAsciiBuf_extractNextCmd(inputAsciiBuf_t* self){
   
   // === remove processed data to free buffer for next read ===
   if (self->cursorBegin){ // note: treating 0 as special case is redundant
-    ESP_LOGI(TAG, "asciiBuf removing %d chars", self->cursorBegin);
+    //ESP_LOGI(TAG, "asciiBuf removing %d chars", self->cursorBegin);
     size_t nKeep = self->nBytes - self->cursorBegin;
     if (nKeep == self->nBytesMax){
       // no space in buffer for a terminating char => overflow condition
@@ -130,7 +130,7 @@ void dispatcher_setConnectState(dispatcher_t* self, int connectState){
 }
 
 int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntries){
-  ESP_LOGI(TAG, "exec on (%s)", inp);
+  //ESP_LOGI(TAG, "exec on (%s)", inp);
   while (dispEntries->key){
     const char* key = dispEntries->key;
     const dispatcherFun_t handlerPrefix = dispEntries->handlerPrefix;
@@ -145,11 +145,11 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
       const int endOfInput = (*inputCursor == '\0') || (*inputCursor == ' ') || (*inputCursor == '\t') || (*inputCursor == '\v');
       if (!endOfKey){
 	if (endOfInput){
-	  ESP_LOGI(TAG, "input (%s) is shorter than key (%s)", inp, key);
+	  //ESP_LOGI(TAG, "input (%s) is shorter than key (%s)", inp, key);
 	  goto breakNextDispEntry; // input too short
 	}
 	if (*keyCursor != *inputCursor){
-	  ESP_LOGI(TAG, "input (%s) differs from key (%s)", inp, key);
+	  //ESP_LOGI(TAG, "input (%s) differs from key (%s)", inp, key);
 	  goto breakNextDispEntry;
 	}	  
 	++keyCursor;
@@ -157,15 +157,15 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
 	continue;
       } // if not end-of-key
 
-      ESP_LOGI(TAG, "input (%s) contains key (%s)", inp, key);
+      //ESP_LOGI(TAG, "input (%s) contains key (%s)", inp, key);
 
       if (/* implied: endOfKey &&*/endOfInput){
 	if (handlerDoSet){
-	  ESP_LOGI(TAG, "handlerDoSet (key:%s)(args:%s)", key, inputCursor);
+	  //ESP_LOGI(TAG, "handlerDoSet (key:%s)(args:%s)", key, inputCursor);
 	  handlerDoSet(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
 	} else {
-	  ESP_LOGI(TAG, "handlerDoSet (%s) is NULL", inp);
+	  //ESP_LOGI(TAG, "handlerDoSet (%s) is NULL", inp);
 	  return 0;
 	}
       } // if endOfInput
@@ -177,25 +177,25 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
       if (nextInputIsQuestionmark){
 	++inputCursor; // skip over "?"
 	if (handlerGet){
-	  ESP_LOGI(TAG, "handlerGet (key:%s)(args:%s)", key, inputCursor);
+	  //ESP_LOGI(TAG, "handlerGet (key:%s)(args:%s)", key, inputCursor);
 	  handlerGet(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
 	} else{
-	  ESP_LOGI(TAG, "handlerGet for key (%s) is NULL", key);
+	  //ESP_LOGI(TAG, "handlerGet for key (%s) is NULL", key);
 	  return 0;
 	}
       } else if (nextInputIsColon){
 	++inputCursor; // skip over ":"
 	if (handlerPrefix){
-	  ESP_LOGI(TAG, "handlerPrefix for key (%s)", key);
+	  //ESP_LOGI(TAG, "handlerPrefix for key (%s)", key);
 	  handlerPrefix(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
 	} else {
-	  ESP_LOGI(TAG, "handlerPrefix for key (%s) is NULL", key);
+	  //ESP_LOGI(TAG, "handlerPrefix for key (%s) is NULL", key);
 	  return 0;
 	}
       } else {
-	ESP_LOGI(TAG, "substring match, ignoring");	
+	//ESP_LOGI(TAG, "substring match, ignoring");	
 	goto breakNextDispEntry;
       }
     } // while cursor
@@ -211,7 +211,6 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
 IRAM_ATTR int nextToken(char* inp, char** itBegin, char** itNext){
   if (inp == NULL)
     return 0; // nextToken may return itNext==NULL
-  ESP_LOGI(TAG, " ------------- next token on '%s'", inp);	
   char* p = inp;
   
   // === scan for begin of token ===
@@ -220,16 +219,13 @@ IRAM_ATTR int nextToken(char* inp, char** itBegin, char** itNext){
     case '\n': // not expected, should have been translated to '\0' by now
     case '\r': // not expected, should have been translated to '\0' by now
     case '\0':
-      ESP_LOGI(TAG, " ------------- next token, none found");	
      return 0; // no more data
     case ' ':
     case '\t':
     case '\v':
-      ESP_LOGI(TAG, " ------------- next token, skipping ws");	
       ++p;
       continue; // skip over leading whitespace
     default:
-      ESP_LOGI(TAG, " ------------- next token, found word char");	
       *itBegin = p;
       goto breakWhitespaceSearch;
     }
@@ -244,7 +240,6 @@ IRAM_ATTR int nextToken(char* inp, char** itBegin, char** itNext){
     case '\n': // not expected, should have been translated to '\0' by now
     case '\r': // not expected, should have been translated to '\0' by now
     case '\0':
-      ESP_LOGI(TAG, " ------------- next token, end");	
       *itNext = NULL;
       return 1;
     case ' ':
@@ -253,7 +248,6 @@ IRAM_ATTR int nextToken(char* inp, char** itBegin, char** itNext){
       *p = '\0';
       ++p;
       *itNext = p;      
-      ESP_LOGI(TAG, " ------------- next token, got some");	
       return 1; // got token
     default:
       ++p;
@@ -272,7 +266,7 @@ IRAM_ATTR int dispatcher_getArgsNull(dispatcher_t* self, char* inp){
 }
 
 IRAM_ATTR int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char** args){
-  ESP_LOGI(TAG, "getArgs (%s)", inp);
+  //  ESP_LOGI(TAG, "getArgs (%s)", inp);
   char* itBegin;
   char* itNext;
   while (n--){
@@ -281,7 +275,7 @@ IRAM_ATTR int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char**
       return 0;
     }
     *(args++) = itBegin;
-    ESP_LOGI(TAG, "getArgs token (%s)", itBegin);
+    // ESP_LOGI(TAG, "getArgs token (%s)", itBegin);
     inp = itNext;
   }
   if (0 != nextToken(inp, &itBegin, &itNext)){
@@ -300,7 +294,7 @@ int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* result){
   char buf[20];
   util_printIp(buf, tmp);
   if (strcmp(buf, inp)){
-    ESP_LOGI(TAG, "IP parse: input (%s) does not match parsed IP (%s)", inp, buf);
+    // ESP_LOGI(TAG, "IP parse: input (%s) does not match parsed IP (%s)", inp, buf);
     errMan_throwARG_NOT_IP(&self->errMan);
     return 0;
   }
@@ -341,7 +335,7 @@ IRAM_ATTR void dispatcher_REPL(dispatcher_t* self, dispatcherEntry_t* dispEntrie
 	errMan_throwOVERFLOW(&self->errMan);            
       if (!cmd)
 	break;
-      ESP_LOGI(TAG, "cmd %s", cmd);
+      // ESP_LOGI(TAG, "cmd %s", cmd);
       int r = dispatcher_exec(self, cmd, dispEntries);
       if (!dispatcher_getConnectState(self))
 	return;
