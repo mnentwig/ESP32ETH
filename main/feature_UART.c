@@ -14,6 +14,6 @@ static dispatcherEntry_t UART_dispEntries[] = {
 
 void UART_handlerPrefix(dispatcher_t* disp, char* inp){
   //  ESP_LOGI(TAG, "dummy log");
-
+  
   dispatcher_exec(disp, inp, UART_dispEntries);
 }

@@ -3,9 +3,116 @@
 #include "util.h"
 #include <string.h> // strlen
 #include "esp_netif.h" // esp_ip4addr_aton
+#include "esp_attr.h" // IRAM_ATTR
 
 static const char *TAG = "dispatcher";
 
+// === inputAsciiBuf ===
+// helper class for REPL
+typedef struct {
+  char buf[256]; // note: don't need additional space for '\0', as command terminator char is changed in-place
+  size_t nBytesMax;
+  size_t nBytes;
+  size_t cursorBegin; // inclusive (first char with non-WS data)
+  size_t cursorEnd; // exclusive (next char to scan)
+  int overflow;
+} inputAsciiBuf_t;
+
+void inputAsciiBuf_init(inputAsciiBuf_t* self){
+  self->nBytes = 0;
+  self->cursorBegin = 0;
+  self->cursorEnd = 0;
+  self->overflow = 0;
+  self->nBytesMax = sizeof(self->buf) / sizeof(char);
+}
+void inputAsciiBuf_getBufSpace(inputAsciiBuf_t* self, char** p, size_t* nBytesFree){
+  *p = &self->buf[self->nBytes];
+  *nBytesFree = self->nBytesMax - self->nBytes;
+}
+void inputAsciiBuf_applyNextRead(inputAsciiBuf_t* self, size_t nBytes){
+  self->nBytes += nBytes;
+  ESP_LOGI(TAG, "asciiBuf now %d bytes", self->nBytes);
+  assert(self->nBytes <= self->nBytesMax);
+}
+
+static int isNonTermWhitespace(char c){
+  switch (c){
+  case ' ':
+  case '\t':
+  case '\v':
+    return 1;
+  case '\r':
+  case '\n':
+  case '\0':
+  default:
+    return 0;
+  }    
+}
+
+static int isTerm(char c){
+  switch (c){
+  default:
+  case ' ':
+  case '\t':
+  case '\v':
+    return 0;
+  case '\r':
+  case '\n':
+  case '\0':
+    return 1;
+  }    
+}
+
+char* inputAsciiBuf_extractNextCmd(inputAsciiBuf_t* self){
+  // === skip leading whitespace ===
+  while (self->cursorBegin < self->nBytes)
+    if (isNonTermWhitespace(self->buf[self->cursorBegin])){
+      ++self->cursorBegin;
+      self->cursorEnd = self->cursorBegin;
+    } else
+      break;
+  
+  // === locate terminator ===
+  while (self->cursorEnd < self->nBytes)
+    if (isTerm(self->buf[self->cursorEnd])){
+      self->buf[self->cursorEnd] = '\0';
+      char* r = &self->buf[self->cursorBegin];
+      ++self->cursorEnd;
+      self->cursorBegin = self->cursorEnd; 
+      if (self->overflow)
+	break;
+      else{
+	ESP_LOGI(TAG, "asciiBuf cmd '%s'", r);
+	return r;
+      }
+    } else {
+      ++self->cursorEnd;
+    } // if (not) term char
+  
+  // === remove processed data to free buffer for next read ===
+  if (self->cursorBegin){ // note: treating 0 as special case is redundant
+    ESP_LOGI(TAG, "asciiBuf removing %d chars", self->cursorBegin);
+    size_t nKeep = self->nBytes - self->cursorBegin;
+    if (nKeep == self->nBytesMax){
+      // no space in buffer for a terminating char => overflow condition
+      ++self->overflow;
+      nKeep = 0; // clear buffer to skip current command
+    } else if (self->overflow){
+      self->overflow = 0;
+    }
+    memcpy(/*dest*/self->buf, /*src*/self->buf+self->cursorBegin, /*n*/nKeep);
+    self->nBytes -= self->cursorBegin;
+    self->cursorEnd -= self->cursorBegin;
+    self->cursorBegin = 0;
+  }
+  return NULL;
+}
+
+int inputAsciiBuf_getNewOverflow(inputAsciiBuf_t* self){
+  return self->overflow == 1;
+}
+
+// === dispatcher ===
 void dispatcher_init(dispatcher_t* self, void* appObj, dispatcher_writeFun_t writeFn, dispatcher_readFun_t readFn, void* connSpecArg){
   self->connectState = 0;
   self->appObj = appObj;
@@ -198,16 +305,45 @@ int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* result){
   return 1; // success;
 }
   
-size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
+ size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
   return self->readFn(self->connSpecArg, buf, nMax);
 }
 
-void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes){
+IRAM_ATTR void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes){
   self->writeFn(self->connSpecArg, buf, nBytes);
 }
 
-void dispatcher_connWriteCString(dispatcher_t* self, const char* str){
+IRAM_ATTR void dispatcher_connWriteCString(dispatcher_t* self, const char* str){
   self->writeFn(self->connSpecArg, str, strlen(str));
   self->writeFn(self->connSpecArg, "\n", 1);
 }
 
+IRAM_ATTR void dispatcher_REPL(dispatcher_t* self, dispatcherEntry_t* dispEntries){
+  inputAsciiBuf_t inputAsciiBuf;
+  inputAsciiBuf_init(&inputAsciiBuf);
+  dispatcher_setConnectState(self, 1);
+  
+  while (1){ // connection loop
+    char* p;
+    size_t nBytesMax;
+    inputAsciiBuf_getBufSpace(&inputAsciiBuf, &p, &nBytesMax);
+    size_t nBytesRead = dispatcher_connRead(self, p, nBytesMax);
+    if (!dispatcher_getConnectState(self))
+      return;
+    inputAsciiBuf_applyNextRead(&inputAsciiBuf, nBytesRead);
+      
+    while (1){
+      char* cmd = inputAsciiBuf_extractNextCmd(&inputAsciiBuf);
+      if (inputAsciiBuf_getNewOverflow(&inputAsciiBuf))
+	errMan_throwOVERFLOW(&self->errMan);            
+      if (!cmd)
+	break;
+      ESP_LOGI(TAG, "cmd %s", cmd);
+      int r = dispatcher_exec(self, cmd, dispEntries);
+      if (!dispatcher_getConnectState(self))
+	return;
+      if (!r)
+	errMan_throwSYNTAX(&self->errMan);      
+    } // while commands to parse in asciiBuffer
+  } // while connected
+}

@@ -68,3 +68,5 @@ void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes);
 void dispatcher_connWriteCString(dispatcher_t* self, const char* str);
 
 
+// === REPL loop ===
+void dispatcher_REPL(dispatcher_t* self, dispatcherEntry_t* dispEntries);
