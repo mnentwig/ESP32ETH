@@ -24,7 +24,7 @@ static void ETH_XYZ_handlerGet(dispatcher_t* disp, char* inp, ETH_variant_e v){
   char tmp2[21];
   sprintf(tmp2, "%s\n", tmp);
   ESP_LOGI(TAG, "CMD_ETH_XYZ?(%s):%s", key, tmp2);
-  dispatcher_reply(disp, tmp2);  
+  dispatcher_connWriteCString(disp, tmp2);  
 }
 
 static const char* NVS_KEY_IP = "ip";

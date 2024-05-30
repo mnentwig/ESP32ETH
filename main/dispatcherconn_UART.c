@@ -56,9 +56,9 @@ void inputAsciiBuf_init(inputAsciiBuf_t* self){
   self->overflow = 0;
   self->nBytesMax = sizeof(self->buf) / sizeof(char);
 }
-void inputAsciiBuf_getNextRead(inputAsciiBuf_t* self, char** p, size_t* nBytesMaxRead){
+void inputAsciiBuf_getBufSpace(inputAsciiBuf_t* self, char** p, size_t* nBytesFree){
   *p = &self->buf[self->nBytes];
-  *nBytesMaxRead = self->nBytesMax - self->nBytes;
+  *nBytesFree = self->nBytesMax - self->nBytes;
 }
 void inputAsciiBuf_applyNextRead(inputAsciiBuf_t* self, size_t nBytes){
   self->nBytes += nBytes;
@@ -153,10 +153,14 @@ void dpConnUart_task(void* _arg){
   while (1){ // accept loop equivalent    
     inputAsciiBuf_init(&inputAsciiBuf);
     dispatcher_setConnectState(args->disp, 1);
+
+    // move this into dispatcher "runConnection()"
+
+    
     while (1){ // connection loop
       char* p;
       size_t nBytesMax;
-      inputAsciiBuf_getNextRead(&inputAsciiBuf, &p, &nBytesMax);
+      inputAsciiBuf_getBufSpace(&inputAsciiBuf, &p, &nBytesMax);
       size_t nBytesRead = dispatcher_connRead(args->disp, p, nBytesMax);
       if (!dispatcher_getConnectState(args->disp))
 	goto disconnect; /* "break" back into accept loop" */

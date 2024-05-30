@@ -99,10 +99,6 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
   return 0;
 }
 
-void dispatcher_reply(dispatcher_t* self, const char* str){
-  self->writeFn(self->connSpecArg, str, strlen(str));
-}
-
 // itBegin returns first token in inp, skipping leading / trailing whitespace, terminated with '0' (inp gets modified!)
 // itNext returns remainder of inp or NULL at end-of-input
 // returns 1 if successful, 0 at end of data
@@ -209,3 +205,9 @@ size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
 void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes){
   self->writeFn(self->connSpecArg, buf, nBytes);
 }
+
+void dispatcher_connWriteCString(dispatcher_t* self, const char* str){
+  self->writeFn(self->connSpecArg, str, strlen(str));
+  self->writeFn(self->connSpecArg, "\n", 1);
+}
+

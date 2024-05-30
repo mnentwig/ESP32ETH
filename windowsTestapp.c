@@ -15,7 +15,6 @@ void fail(const char* msg){
   exit(-1);
 }
 
-
 void initWinsock(){
   WORD wVersionRequested; 
   WSADATA wsaData; 

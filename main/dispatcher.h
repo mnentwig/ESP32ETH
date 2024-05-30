@@ -45,10 +45,6 @@ int dispatcher_exec
  dispatcherEntry_t* dispEntries // NULL-terminated list of keywords to match (one level of parse tree)
  );
 
-// shorthand for calling self->writeFun on C string
-void dispatcher_reply(dispatcher_t* self, const char* str);
-
-
 // === argument processing functions ===
 // return 1 for success
 // 0 otherwise, with appropriate error in errMan
@@ -68,3 +64,7 @@ size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax);
 
 // writes data to connection (blocking)
 void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes);
+// shorthand for above on C string, adds '\n' termination
+void dispatcher_connWriteCString(dispatcher_t* self, const char* str);
+
+

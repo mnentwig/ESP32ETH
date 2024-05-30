@@ -1,4 +1,5 @@
 #pragma once
+typedef struct dispatcher_s dispatcher_t;
 typedef struct {
   char msg[256];
   size_t errCount;  
@@ -22,3 +23,7 @@ void errMan_throwSYNTAX(errMan_t* self);
 // command too long (needs to fit into processing buffer)
 void errMan_throwOVERFLOW(errMan_t* self);
 
+// errMan response to ERR command at toplevel
+void ERR_handlerPrefix(dispatcher_t* disp, char* inp);
+void ERR_handlerDoSet(dispatcher_t* disp, char* inp);
+void ERR_handlerGet(dispatcher_t* disp, char* inp);

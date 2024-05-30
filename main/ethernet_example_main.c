@@ -32,6 +32,7 @@ extern errMan_t errMan; // required feature (for dealing with incorrect input)
 #include "dispatcherconn_uart.h"
 static const char *TAG = "main";
 static dispatcherEntry_t dispEntriesRootLevel[] = {
+  {.key="ERR", .handlerPrefix=ERR_handlerPrefix, .handlerDoSet=ERR_handlerDoSet, .handlerGet=ERR_handlerGet},
   {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL},
   {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL},
   {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL} // end marker
