@@ -2,6 +2,7 @@
 #include "dispatcher.h"
 #include "util.h"
 #include <string.h> // strlen
+#include "esp_netif.h" // esp_ip4addr_aton
 
 static const char *TAG = "dispatcher";
 
@@ -54,7 +55,7 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
 
       if (/* implied: endOfKey &&*/endOfInput){
 	if (handlerDoSet){
-	  ESP_LOGI(TAG, "handlerDoSet (%s)", inp);
+	  ESP_LOGI(TAG, "handlerDoSet (key:%s)(args:%s)", key, inputCursor);
 	  handlerDoSet(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
 	} else {
@@ -70,7 +71,7 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
       if (nextInputIsQuestionmark){
 	++inputCursor; // skip over "?"
 	if (handlerGet){
-	  ESP_LOGI(TAG, "handlerGet for key (%s)", key);
+	  ESP_LOGI(TAG, "handlerGet (key:%s)(args:%s)", key, inputCursor);
 	  handlerGet(self, inputCursor);
 	  return self->connectState; // 1 unless disconnected
 	} else{
@@ -106,31 +107,42 @@ void dispatcher_reply(dispatcher_t* self, const char* str){
 // itNext returns remainder of inp or NULL at end-of-input
 // returns 1 if successful, 0 at end of data
 IRAM_ATTR int nextToken(char* inp, char** itBegin, char** itNext){
+  if (inp == NULL)
+    return 0; // nextToken may return itNext==NULL
+  ESP_LOGI(TAG, " ------------- next token on '%s'", inp);	
   char* p = inp;
   
   // === scan for begin of token ===
   while (1){
-    *itBegin = p;
-    char c = *p;
-    ++p;
-    switch (c){
+    switch (*p){
+    case '\n': // not expected, should have been translated to '\0' by now
+    case '\r': // not expected, should have been translated to '\0' by now
     case '\0':
-      return 0; // no more data
+      ESP_LOGI(TAG, " ------------- next token, none found");	
+     return 0; // no more data
     case ' ':
     case '\t':
     case '\v':
-      break;
+      ESP_LOGI(TAG, " ------------- next token, skipping ws");	
+      ++p;
+      continue; // skip over leading whitespace
     default:
-      break;
+      ESP_LOGI(TAG, " ------------- next token, found word char");	
+      *itBegin = p;
+      goto breakWhitespaceSearch;
     }
-  }
+  } // while whitespace search
+ breakWhitespaceSearch:
   
   // scan for end of token ===
   while (1){
     *itNext = p;
     char c = *p;
     switch (c){
+    case '\n': // not expected, should have been translated to '\0' by now
+    case '\r': // not expected, should have been translated to '\0' by now
     case '\0':
+      ESP_LOGI(TAG, " ------------- next token, end");	
       *itNext = NULL;
       return 1;
     case ' ':
@@ -139,6 +151,7 @@ IRAM_ATTR int nextToken(char* inp, char** itBegin, char** itNext){
       *p = '\0';
       ++p;
       *itNext = p;      
+      ESP_LOGI(TAG, " ------------- next token, got some");	
       return 1; // got token
     default:
       ++p;
@@ -156,6 +169,39 @@ IRAM_ATTR int dispatcher_getArgsNull(dispatcher_t* self, char* inp){
   return 1;
 }
 
+IRAM_ATTR int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char** args){
+  ESP_LOGI(TAG, "getArgs (%s)", inp);
+  char* itBegin;
+  char* itNext;
+  while (n--){
+    if (!nextToken(inp, &itBegin, &itNext)){
+      errMan_throwARG_COUNT(&self->errMan); // expected arg, got none
+      return 0;
+    }
+    *(args++) = itBegin;
+    ESP_LOGI(TAG, "getArgs token (%s)", itBegin);
+    inp = itNext;
+  }
+  if (0 != nextToken(inp, &itBegin, &itNext)){
+    errMan_throwARG_COUNT(&self->errMan); // got unexpected arg
+    return 0;
+  }
+  return 1;
+}
+
+int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* result){
+  uint32_t tmp = esp_ip4addr_aton(inp);
+  char buf[20];
+  util_printIp(buf, tmp);
+  if (strcmp(buf, inp)){
+    ESP_LOGI(TAG, "IP parse: input (%s) does not match parsed IP (%s)", inp, buf);
+    errMan_throwARG_NOT_IP(&self->errMan);
+    return 0;
+  }
+  *result = tmp;
+  return 1; // success;
+}
+  
 size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
   return self->readFn(self->connSpecArg, buf, nMax);
 }

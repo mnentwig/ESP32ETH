@@ -27,15 +27,54 @@ static void ETH_XYZ_handlerGet(dispatcher_t* disp, char* inp, ETH_variant_e v){
   dispatcher_reply(disp, tmp2);  
 }
 
-static void ETH_IP_handlerDoSet(dispatcher_t* disp, char* inp){}
+static const char* NVS_KEY_IP = "ip";
+static const char* NVS_KEY_GW = "gw";
+static const char* NVS_KEY_MASK = "mask";
+static const char* getNvsKey(ETH_variant_e v){
+  switch (v){
+  case VAR_IP:
+    return NVS_KEY_IP;
+  case VAR_GW:
+    return NVS_KEY_GW;
+  case VAR_MASK:
+    return NVS_KEY_MASK;
+  default:
+    assert(0);
+    return NULL;    
+  }
+}
+
+static void ETH_XYZ_handlerDoSet(dispatcher_t* disp, char* inp, ETH_variant_e v){
+  const char* nvsKey = getNvsKey(v);
+
+  char* args[1];
+  if (!dispatcher_getArgs(disp, inp, /*n*/1, args))
+    return;
+  uint32_t ip;
+  if (!dispatcher_parseArg_IP(disp, args[0], &ip))
+    return;
+  
+  ESP_LOGI(TAG, "CMD_ETH_XYZ(%s):%s", nvsKey, args[0]);
+  nvsMan_set_u32(&nvsMan, nvsKey, ip);
+}
+
+static void ETH_IP_handlerDoSet(dispatcher_t* disp, char* inp){
+  ESP_LOGI(TAG, "CMD_ETH_IP (%s)", inp);
+  ETH_XYZ_handlerDoSet(disp, inp, VAR_IP);
+}
+static void ETH_GW_handlerDoSet(dispatcher_t* disp, char* inp){
+  ETH_XYZ_handlerDoSet(disp, inp, VAR_GW);
+}
+static void ETH_MASK_handlerDoSet(dispatcher_t* disp, char* inp){
+  ETH_XYZ_handlerDoSet(disp, inp, VAR_MASK);
+}
+
 static void ETH_IP_handlerGet(dispatcher_t* disp, char* inp){
   ETH_XYZ_handlerGet(disp, inp, VAR_IP);
 }
-static void ETH_GW_handlerDoSet(dispatcher_t* disp, char* inp){}
 static void ETH_GW_handlerGet(dispatcher_t* disp, char* inp){
   ETH_XYZ_handlerGet(disp, inp, VAR_GW);
 }
-static void ETH_MASK_handlerDoSet(dispatcher_t* disp, char* inp){}
 static void ETH_MASK_handlerGet(dispatcher_t* disp, char* inp){
   ETH_XYZ_handlerGet(disp, inp, VAR_MASK);
 }
@@ -52,27 +91,6 @@ void ETH_handlerPrefix(dispatcher_t* disp, char* inp){
 }
 
 #if 0
-static const char* cmd_ETH_XYZ_set(dispatcher_t* self, const char* pTokenBegin, const char* pTokenEnd, const char* key){
-  if (util_tokenCount(pTokenEnd) != 1){
-    errMan_reportError(&self->errMan, "ARG_COUNT");
-    return NULL;
-  }
-  
-  const char *pArg1Begin, *pArg1End;
-  util_tokenize(pTokenEnd, &pArg1Begin, &pArg1End);
-  
-  char tmp[256];
-  util_token2cstring(pArg1Begin, pArg1End, tmp);
-  uint32_t newIp;
-  if (!util_parseIp(tmp, &newIp)){
-    errMan_reportError(&self->errMan, "ARG_PARSEAS_IP");
-  } else {
-    ESP_LOGI(TAG, "CMD_ETH_XYZ(%s):%s", key, tmp);
-    nvsMan_set_u32(&nvsMan, key, newIp);
-  }
-  return NULL;
-}	
-
 const char* dispatcher_execCmd(dispatcher_t* self, const char* inp){
   if (inp){
     // === extract command token ===

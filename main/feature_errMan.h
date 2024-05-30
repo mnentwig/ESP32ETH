@@ -13,8 +13,12 @@ void errMan_clear(errMan_t* self);
 // unexpected number of arguments
 void errMan_throwARG_COUNT(errMan_t* self);
 
+// failure to parse argument as XYZ
+void errMan_throwARG_NOT_IP(errMan_t* self);
+
 // command not recognized
 void errMan_throwSYNTAX(errMan_t* self);
 
 // command too long (needs to fit into processing buffer)
 void errMan_throwOVERFLOW(errMan_t* self);
+

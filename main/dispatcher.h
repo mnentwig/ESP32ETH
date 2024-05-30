@@ -1,5 +1,6 @@
 #pragma once
 #include <stddef.h> // size
+#include <stdint.h> // size
 #include "feature_errMan.h"
 
 typedef struct dispatcher_s dispatcher_t;
@@ -53,6 +54,14 @@ void dispatcher_reply(dispatcher_t* self, const char* str);
 // 0 otherwise, with appropriate error in errMan
 // note: input is modified (string terminations)
 int dispatcher_getArgsNull(dispatcher_t* self, char* inp);
+
+// returns 1 for success
+// 0 otherwise, with appropriate error in errMan
+int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char** args);
+
+int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* outp);
+
+// === connection access ===
 
 // reads from connection, between 1 and nMax bytes (blocking)
 size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax);

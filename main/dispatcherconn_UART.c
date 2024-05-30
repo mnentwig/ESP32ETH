@@ -121,19 +121,21 @@ char* inputAsciiBuf_extractNextCmd(inputAsciiBuf_t* self){
     } // if (not) term char
   
   // === remove processed data to free buffer for next read ===
-  ESP_LOGI(TAG, "asciiBuf removing %d chars", self->cursorBegin);
-  size_t nKeep = self->nBytes - self->cursorBegin;
-  if (nKeep == self->nBytesMax){
-    // no space in buffer for a terminating char => overflow condition
-    ++self->overflow;
-    nKeep = 0; // clear buffer to skip current command
-  } else if (self->overflow){
-    self->overflow = 0;
+  if (self->cursorBegin){ // note: treating 0 as special case is redundant
+    ESP_LOGI(TAG, "asciiBuf removing %d chars", self->cursorBegin);
+    size_t nKeep = self->nBytes - self->cursorBegin;
+    if (nKeep == self->nBytesMax){
+      // no space in buffer for a terminating char => overflow condition
+      ++self->overflow;
+      nKeep = 0; // clear buffer to skip current command
+    } else if (self->overflow){
+      self->overflow = 0;
+    }
+    memcpy(/*dest*/self->buf, /*src*/self->buf+self->cursorBegin, /*n*/nKeep);
+    self->nBytes -= self->cursorBegin;
+    self->cursorEnd -= self->cursorBegin;
+    self->cursorBegin = 0;
   }
-  memcpy(/*dest*/self->buf, /*src*/self->buf+self->cursorBegin, /*n*/nKeep);
-  self->nBytes -= self->cursorBegin;
-  self->cursorEnd -= self->cursorBegin;
-  self->cursorBegin = 0;
   return NULL;
 }
 
