@@ -81,96 +81,87 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
   ESP_LOGI(TAG, "~~~~~~~~~~~");
 }
 
-void app_main(void){{
-    // === install interrupt-based UART driver ===
-    // enables blocking read
-    fflush(stdin);
-    fflush(stdout);
+void app_main(void){
+  // === install interrupt-based UART driver ===
+  // enables blocking read
+  fflush(stdin);
+  fflush(stdout);
     
-    ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0));
-    esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
+  ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0));
+  esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
 
-    // === initialize NVS ===
-    nvsMan_init(&nvsMan);
+  // === initialize NVS ===
+  nvsMan_init(&nvsMan);
 
-    // Initialize Ethernet driver
-    uint8_t eth_port_cnt = 0;
-    esp_eth_handle_t *eth_handles;
-    ESP_ERROR_CHECK(example_eth_init(&eth_handles, &eth_port_cnt));
+  // Initialize Ethernet driver
+  uint8_t eth_port_cnt = 0;
+  esp_eth_handle_t *eth_handles;
+  ESP_ERROR_CHECK(example_eth_init(&eth_handles, &eth_port_cnt));
   
-    // Initialize TCP/IP network interface aka the esp-netif (should be called only once in application)
-    ESP_ERROR_CHECK(esp_netif_init());
-    // Create default event loop that running in background
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+  // Initialize TCP/IP network interface aka the esp-netif (should be called only once in application)
+  ESP_ERROR_CHECK(esp_netif_init());
+  // Create default event loop that running in background
+  ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // Create instance(s) of esp-netif for Ethernet(s)
-    if (eth_port_cnt != 1){
-      ESP_LOGE(TAG, "expecting 1 ETH interface, got %d", eth_port_cnt);
-      ESP_ERROR_CHECK(ESP_FAIL);
-    }
+  // Create instance(s) of esp-netif for Ethernet(s)
+  if (eth_port_cnt != 1){
+    ESP_LOGE(TAG, "expecting 1 ETH interface, got %d", eth_port_cnt);
+    ESP_ERROR_CHECK(ESP_FAIL);
+  }
   
-    esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
-    esp_netif_t *eth_netif = esp_netif_new(&cfg);
-    // Attach Ethernet driver to TCP/IP stack
-    ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handles[0])));
+  esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
+  esp_netif_t *eth_netif = esp_netif_new(&cfg);
+  // Attach Ethernet driver to TCP/IP stack
+  ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handles[0])));
     
-    // Register user defined event handers
-    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, NULL));
+  // Register user defined event handers
+  ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
+  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, NULL));
 
-    esp_netif_dhcpc_stop(eth_netif);
-    char* ip= "192.168.178.123";
-    char* gateway = "192.168.178.1";
-    char* netmask = "255.255.255.0";
-    esp_netif_ip_info_t info;
-    memset(&info, 0, sizeof(esp_netif_ip_info_t));
-    info.ip.addr = esp_ip4addr_aton(ip);
-    info.gw.addr = esp_ip4addr_aton(gateway);
-    info.netmask.addr = esp_ip4addr_aton(netmask);
-    esp_netif_set_ip_info(eth_netif, &info);     
+  esp_netif_dhcpc_stop(eth_netif);
+  char* ip= "192.168.178.123";
+  char* gateway = "192.168.178.1";
+  char* netmask = "255.255.255.0";
+  esp_netif_ip_info_t info;
+  memset(&info, 0, sizeof(esp_netif_ip_info_t));
+  info.ip.addr = esp_ip4addr_aton(ip);
+  info.gw.addr = esp_ip4addr_aton(gateway);
+  info.netmask.addr = esp_ip4addr_aton(netmask);
+  esp_netif_set_ip_info(eth_netif, &info);     
     
-    // Start Ethernet driver state machine
-    ESP_ERROR_CHECK(esp_eth_start(eth_handles[0]));
+  // Start Ethernet driver state machine
+  ESP_ERROR_CHECK(esp_eth_start(eth_handles[0]));
     
-    // === start TCP/IP server threads ===
-    // note: LWIP doesn't seem to have issues with multi-threaded, parallel accept() instead of a single select()
-    const size_t nConnections = 4;
-    dispatcher_t ethDispatchers[nConnections]; //lifetime: below task must end before current scope is exited
+  // === start TCP/IP server threads ===
+  // note: LWIP doesn't seem to have issues with multi-threaded, parallel accept() instead of a single select()
+  const size_t nConnections = 4;
+  dispatcher_t ethDispatchers[nConnections]; //lifetime: below task must end before current scope is exited
     
-    dpConnEthArgs_t etArgs[nConnections];
-    for (size_t ixConn = 0; ixConn < nConnections; ++ixConn){
-      dpConnEthArgs_init(&etArgs[ixConn], &ethDispatchers[ixConn], /*port*/76+ixConn, /*myIpAddr*/info.ip.addr, /*userArg*/NULL, &dispEntriesRootLevel[0]);
-      dispatcher_init(&ethDispatchers[ixConn], /*appObj*/NULL, dpConnEth_write, dpConnEth_read, (void*)&etArgs[ixConn]);
+  dpConnEthArgs_t etArgs[nConnections];
+  for (size_t ixConn = 0; ixConn < nConnections; ++ixConn){
+    dpConnEthArgs_init(&etArgs[ixConn], &ethDispatchers[ixConn], /*port*/76+ixConn, /*myIpAddr*/info.ip.addr, /*userArg*/NULL, &dispEntriesRootLevel[0]);
+    dispatcher_init(&ethDispatchers[ixConn], /*appObj*/NULL, dpConnEth_write, dpConnEth_read, (void*)&etArgs[ixConn]);
       
-      int ret = xTaskCreatePinnedToCore(dpConnEth_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
-      if (ret != pdPASS) {
-	ESP_LOGE(TAG, "failed to create eth task");
-	ESP_ERROR_CHECK(ESP_FAIL);
-      }
-    }
-    
-    // === start console task ===
-    dispatcher_t uartDispatcher; //lifetime: below task must end before current scope is exited	
-    dpConnUartArgs_t uartArgs;
-    
-    dpConnUartArgs_init(&uartArgs, &uartDispatcher, CONFIG_ESP_CONSOLE_UART_NUM, /*userArg*/NULL, &dispEntriesRootLevel[0]);
-    dispatcher_init(&uartDispatcher, /*appObj*/NULL, dpConnUart_write, dpConnUart_read, (void*)&uartArgs);
-    int ret = xTaskCreatePinnedToCore(dpConnUart_task, "uart", /*stack*/4096, (void*)&uartArgs, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+    int ret = xTaskCreatePinnedToCore(dpConnEth_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
-      ESP_LOGE(TAG, "failed to create uart task");
+      ESP_LOGE(TAG, "failed to create eth task");
       ESP_ERROR_CHECK(ESP_FAIL);
     }
+  }
     
-    while (1){
-      vTaskDelay(1000/portTICK_PERIOD_MS);
-    }
+  // === start console task ===
+  dispatcher_t uartDispatcher; //lifetime: below task must end before current scope is exited	
+  dpConnUartArgs_t uartArgs;
     
-    // if (client_socket != -1) {
-    //  close(client_socket);
-    //}
+  dpConnUartArgs_init(&uartArgs, &uartDispatcher, CONFIG_ESP_CONSOLE_UART_NUM, /*userArg*/NULL, &dispEntriesRootLevel[0]);
+  dispatcher_init(&uartDispatcher, /*appObj*/NULL, dpConnUart_write, dpConnUart_read, (void*)&uartArgs);
+  int ret = xTaskCreatePinnedToCore(dpConnUart_task, "uart", /*stack*/4096, (void*)&uartArgs, tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+  if (ret != pdPASS) {
+    ESP_LOGE(TAG, "failed to create uart task");
+    ESP_ERROR_CHECK(ESP_FAIL);
+  }
     
-    //if (listen_socket != -1) {
-    //  shutdown(listen_socket, 0);
-    //  close(listen_socket);
-  } // while forever
+  while (1){
+    vTaskDelay(1000/portTICK_PERIOD_MS);
+  }
 }

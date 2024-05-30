@@ -21,10 +21,8 @@ static void ETH_XYZ_handlerGet(dispatcher_t* disp, char* inp, ETH_variant_e v){
   case VAR_MASK: key = "netmask"; break;
   }
   util_printIp(tmp, nvsMan_get_u32(&nvsMan, key));
-  char tmp2[21];
-  sprintf(tmp2, "%s\n", tmp);
-  ESP_LOGI(TAG, "CMD_ETH_XYZ?(%s):%s", key, tmp2);
-  dispatcher_connWriteCString(disp, tmp2);  
+  ESP_LOGI(TAG, "CMD_ETH_XYZ?(%s):%s", key, tmp);
+  dispatcher_connWriteCString(disp, tmp);  
 }
 
 static const char* NVS_KEY_IP = "ip";

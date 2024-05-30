@@ -103,6 +103,29 @@ void dpConnEth_task(void* _arg){
     errMan_clear(&etArgs->disp->errMan);
     etArgs->client_socket = client_socket;
     etArgs->remote_addr = remote_addr;
+    
+    dispatcher_REPL(etArgs->disp, etArgs->parseRoot);
+    
+    ESP_LOGI(TAG, "eth disconnect");
+  } // while 
+  
+    // if (client_socket != -1) {
+    //  close(client_socket);
+    //}
+  
+    //if (listen_socket != -1) {
+    //  shutdown(listen_socket, 0);
+    //  close(listen_socket);
+  
+  // vTaskDelete(NULL);      
+}
+#if 0
+ESP_LOGI(TAG, "disconnect");
+uart_flush(args->uartNum);
+} // accept loop
+
+
+    
     dispatcher_setConnectState(etArgs->disp, 1);
     
     const uint32_t nBytesMax = 255; // +1 for C string zero termination
@@ -179,9 +202,5 @@ void dpConnEth_task(void* _arg){
       } // foreach unparsed char
     } // while connection
   disconnect:;
-    ESP_LOGI(TAG, "eth disconnect");
-  } // while 
-  
-  // close(client_socket);
-  // vTaskDelete(NULL);      
-}
+
+#endif
