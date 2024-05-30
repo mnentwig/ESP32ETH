@@ -9,27 +9,20 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "ethernet_init.h"
-#include "sdkconfig.h"
-#include "lwip/sockets.h"
 #include "esp_err.h"
-//#include <sys/param.h>
-#include <sys/socket.h> // ?
-//#include "driver/gpio.h"
 #include "driver/uart.h" // for driver install
 
-#include "util.h"
 #include "esp_vfs_dev.h"// blocking stdin (interrupt driver)
 #include "esp_vfs.h"
 #include "feature_nvsMan.h"
-#include "feature_errMan.h"
 nvsMan_t nvsMan; // required feature (for accessing NVS)
-extern errMan_t errMan; // required feature (for dealing with incorrect input)
 #include "dispatcher.h"
-#include "feature_ETH.h"
-#include "feature_UART.h"
+#include "feature_ETH.h" // ETH command handler
+#include "feature_UART.h" // UART command handler
 
-#include "dispatcherconn_ethernet.h"
-#include "dispatcherconn_uart.h"
+#include "dispatcherconn_ethernet.h" // connection interface to dispatcher
+#include "dispatcherconn_uart.h" // connection interface to dispatcher
+
 static const char *TAG = "main";
 static dispatcherEntry_t dispEntriesRootLevel[] = {
   {.key="ERR", .handlerPrefix=ERR_handlerPrefix, .handlerDoSet=ERR_handlerDoSet, .handlerGet=ERR_handlerGet},
