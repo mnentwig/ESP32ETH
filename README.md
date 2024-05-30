@@ -63,3 +63,8 @@ Argument could not be parsed as IP4-address e.g. 192.168.1.100 (note: leading ze
 use 5.2.1
 
 
+# notes on low-latency (~1 ms roundtrip) Ethernet
+- run Ethernet task at highest priority
+- disable Nagle's algorithm
+- 240 MHz CPU clock won't hurt
+- FreeRTOS tick rate should not matter if ETH task prio is sufficient

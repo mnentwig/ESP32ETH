@@ -89,10 +89,11 @@ int main(void){
   }
   printf("connected\n"); fflush(stdout);
 
-  for (size_t ix = 0; ix < 100; ++ix){
-    write(s, "ETH:IP?");
-    char* b = read(s);    
-    printf("%i received %s\n", ix, b);
+  for (size_t ix = 0; ix < 1000; ++ix){
+    write(s, "ERR?");
+    char* b = read(s);
+    if (ix % 50 == 0)
+      printf("%i received %s\n", ix, b);
   }
   exit(EXIT_SUCCESS);
 }

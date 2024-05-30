@@ -4,7 +4,7 @@
 #include "esp_log.h"
 extern nvsMan_t nvsMan; // required feature (for accessing NVS)
 extern errMan_t errMan; // required feature (for dealing with incorrect input)
-static const char *TAG = "feature_ETH";
+// static const char *TAG = "feature_ETH";
 
 typedef enum {VAR_IP, VAR_GW, VAR_MASK} ETH_variant_e;
 

@@ -142,7 +142,7 @@ void app_main(void){
     dpConnEthArgs_init(&etArgs[ixConn], &ethDispatchers[ixConn], /*port*/76+ixConn, /*myIpAddr*/info.ip.addr, /*userArg*/NULL, &dispEntriesRootLevel[0]);
     dispatcher_init(&ethDispatchers[ixConn], /*appObj*/NULL, dpConnEth_write, dpConnEth_read, (void*)&etArgs[ixConn]);
       
-    int ret = xTaskCreatePinnedToCore(dpConnEth_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY, NULL, portNUM_PROCESSORS - 1);
+    int ret = xTaskCreatePinnedToCore(dpConnEth_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY+1, NULL, portNUM_PROCESSORS - 1);
     if (ret != pdPASS) {
       ESP_LOGE(TAG, "failed to create eth task");
       ESP_ERROR_CHECK(ESP_FAIL);

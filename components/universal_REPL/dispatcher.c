@@ -4,7 +4,7 @@
 #include "esp_netif.h" // esp_ip4addr_aton
 #include "esp_attr.h" // IRAM_ATTR
 
-static const char *TAG = "dispatcher";
+//static const char *TAG = "dispatcher";
 
 // === inputAsciiBuf ===
 // helper class for REPL
