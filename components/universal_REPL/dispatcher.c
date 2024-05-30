@@ -1,6 +1,5 @@
 #include "esp_log.h" // ESP_LOGX
 #include "dispatcher.h"
-#include "util.h"
 #include <string.h> // strlen
 #include "esp_netif.h" // esp_ip4addr_aton
 #include "esp_attr.h" // IRAM_ATTR
@@ -290,6 +289,10 @@ IRAM_ATTR int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char**
     return 0;
   }
   return 1;
+}
+
+static void util_printIp(char* buf, uint32_t ip){
+  sprintf(buf, "%d.%d.%d.%d", (int)(ip >> 0) & 0xFF, (int)(ip >> 8) & 0xFF, (int)(ip >> 16) & 0xFF, (int)(ip >> 24) & 0xFF);
 }
 
 int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* result){

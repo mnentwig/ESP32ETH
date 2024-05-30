@@ -14,7 +14,7 @@
 #include "esp_err.h"
 //#include <sys/param.h>
 #include <sys/socket.h> // ?
-#include "driver/gpio.h"
+//#include "driver/gpio.h"
 #include "driver/uart.h" // for driver install
 
 #include "util.h"

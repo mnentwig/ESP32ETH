@@ -2,7 +2,6 @@
 #include "esp_log.h" // ESP_LOGX
 #include "esp_err.h" // ESP_ERROR_CHECK
 #include "esp_netif.h" // esp_ip4addr_aton
-#include "util.h"
 #include "feature_nvsMan.h"
 static const char *TAG = "nvsMan";
 uint32_t nvsMan_get_u32(nvsMan_t* self, const char* key){
@@ -53,6 +52,10 @@ static void nvsMan_initializeBlankField_u32(nvsMan_t* self, const char* key, uin
   }
 
   nvsMan_set_u32(self, key, val);
+}
+
+static void util_printIp(char* buf, uint32_t ip){
+  sprintf(buf, "%d.%d.%d.%d", (int)(ip >> 0) & 0xFF, (int)(ip >> 8) & 0xFF, (int)(ip >> 16) & 0xFF, (int)(ip >> 24) & 0xFF);
 }
 
 void nvsMan_init(nvsMan_t* self){

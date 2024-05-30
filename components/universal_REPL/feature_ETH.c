@@ -1,5 +1,4 @@
 #include "feature_ETH.h"
-#include "util.h"
 #include "feature_nvsMan.h"
 #include "feature_errMan.h"
 #include "esp_log.h"
@@ -8,6 +7,10 @@ extern errMan_t errMan; // required feature (for dealing with incorrect input)
 static const char *TAG = "feature_ETH";
 
 typedef enum {VAR_IP, VAR_GW, VAR_MASK} ETH_variant_e;
+
+static void util_printIp(char* buf, uint32_t ip){
+  sprintf(buf, "%d.%d.%d.%d", (int)(ip >> 0) & 0xFF, (int)(ip >> 8) & 0xFF, (int)(ip >> 16) & 0xFF, (int)(ip >> 24) & 0xFF);
+}
 
 static void ETH_XYZ_handlerGet(dispatcher_t* disp, char* inp, ETH_variant_e v){
   if (!dispatcher_getArgsNull(disp, inp))
