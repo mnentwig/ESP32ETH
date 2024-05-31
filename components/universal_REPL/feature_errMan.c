@@ -41,6 +41,10 @@ void errMan_throwARG_NOT_IP(errMan_t* self){
   errMan_reportError(self, "ARG_NOT_IP");
 }
 
+void errMan_throwARG_NOT_UINT32(errMan_t* self){
+  errMan_reportError(self, "ARG_NOT_UINT32");
+}
+
 void errMan_throwSYNTAX(errMan_t* self){
   errMan_reportError(self, "SYNTAX");
 }
@@ -49,12 +53,12 @@ void errMan_throwOVERFLOW(errMan_t* self){
   errMan_reportError(self, "OVERFLOW");
 }
 
-void ERR_handlerPrefix(dispatcher_t* disp, char* inp){
+void ERR_handlerPrefix(dispatcher_t* disp, char* inp, void* payload){
   errMan_t* self = &disp->errMan;
   errMan_throwSYNTAX(self); // not yet implemented
 }
 
-void ERR_handlerDoSet(dispatcher_t* disp, char* inp){
+void ERR_handlerDoSet(dispatcher_t* disp, char* inp, void* payload){
   errMan_t* self = &disp->errMan;
   char* args[1];
   if (!dispatcher_getArgs(disp, inp, /*n*/1, args))
@@ -62,7 +66,7 @@ void ERR_handlerDoSet(dispatcher_t* disp, char* inp){
   errMan_reportError(self, args[0]);
 }
 
-void ERR_handlerGet(dispatcher_t* disp, char* inp){
+void ERR_handlerGet(dispatcher_t* disp, char* inp, void* payload){
   errMan_t* self = &disp->errMan;
   if (!dispatcher_getArgsNull(disp, inp)) return;
   if (self->errCount){

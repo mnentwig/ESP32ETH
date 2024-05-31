@@ -136,7 +136,8 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
     const dispatcherFun_t handlerPrefix = dispEntries->handlerPrefix;
     const dispatcherFun_t handlerDoSet = dispEntries->handlerDoSet;
     const dispatcherFun_t handlerGet = dispEntries->handlerGet;
-
+    void* payload = dispEntries->payload;
+    
     const char* keyCursor = key;
     char* inputCursor = inp;
     // === scan input and key ===
@@ -162,7 +163,7 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
       if (/* implied: endOfKey &&*/endOfInput){
 	if (handlerDoSet){
 	  //ESP_LOGI(TAG, "handlerDoSet (key:%s)(args:%s)", key, inputCursor);
-	  handlerDoSet(self, inputCursor);
+	  handlerDoSet(self, inputCursor, payload);
 	  return self->connectState; // 1 unless disconnected
 	} else {
 	  //ESP_LOGI(TAG, "handlerDoSet (%s) is NULL", inp);
@@ -178,7 +179,7 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
 	++inputCursor; // skip over "?"
 	if (handlerGet){
 	  //ESP_LOGI(TAG, "handlerGet (key:%s)(args:%s)", key, inputCursor);
-	  handlerGet(self, inputCursor);
+	  handlerGet(self, inputCursor, payload);
 	  return self->connectState; // 1 unless disconnected
 	} else{
 	  //ESP_LOGI(TAG, "handlerGet for key (%s) is NULL", key);
@@ -188,7 +189,7 @@ int dispatcher_exec(dispatcher_t* self, char* inp, dispatcherEntry_t* dispEntrie
 	++inputCursor; // skip over ":"
 	if (handlerPrefix){
 	  //ESP_LOGI(TAG, "handlerPrefix for key (%s)", key);
-	  handlerPrefix(self, inputCursor);
+	  handlerPrefix(self, inputCursor, payload);
 	  return self->connectState; // 1 unless disconnected
 	} else {
 	  //ESP_LOGI(TAG, "handlerPrefix for key (%s) is NULL", key);
@@ -301,8 +302,37 @@ int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* result){
   *result = tmp;
   return 1; // success;
 }
+
+int dispatcher_parseArg_UINT32(dispatcher_t* self, char* inp, uint32_t* outp){
+
+  int base;
+  char* inp2 = inp+1;
+  if ((*inp == '0') && (*inp2 == 'x')){
+    base = 16;
+    inp += 2;
+  } else {
+    base = 10;
+  }
   
- size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
+  *outp = strtoul(inp, NULL, base);
+
+  char buf[32];
+  switch (base){
+  case 10:
+    sprintf(buf, "%lu", *outp); break;
+  case 16:
+    sprintf(buf, "%lx", *outp); break;
+  default:
+    assert(0);
+  }
+  if (strcmpi(inp, buf)){
+    errMan_throwARG_NOT_UINT32(&self->errMan);
+    return 0;
+  }
+  return 1;
+}
+
+size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
   return self->readFn(self->connSpecArg, buf, nMax);
 }
 

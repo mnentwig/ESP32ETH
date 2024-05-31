@@ -16,6 +16,7 @@ void errMan_throwARG_COUNT(errMan_t* self);
 
 // failure to parse argument as XYZ
 void errMan_throwARG_NOT_IP(errMan_t* self);
+void errMan_throwARG_NOT_UINT32(errMan_t* self);
 
 // command not recognized
 void errMan_throwSYNTAX(errMan_t* self);
@@ -24,6 +25,6 @@ void errMan_throwSYNTAX(errMan_t* self);
 void errMan_throwOVERFLOW(errMan_t* self);
 
 // errMan response to ERR command at toplevel
-void ERR_handlerPrefix(dispatcher_t* disp, char* inp);
-void ERR_handlerDoSet(dispatcher_t* disp, char* inp);
-void ERR_handlerGet(dispatcher_t* disp, char* inp);
+void ERR_handlerPrefix(dispatcher_t* disp, char* inp, void* payload);
+void ERR_handlerDoSet(dispatcher_t* disp, char* inp, void* payload);
+void ERR_handlerGet(dispatcher_t* disp, char* inp, void* payload);

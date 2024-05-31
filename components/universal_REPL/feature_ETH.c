@@ -59,35 +59,35 @@ static void ETH_XYZ_handlerDoSet(dispatcher_t* disp, char* inp, ETH_variant_e v)
   nvsMan_set_u32(&nvsMan, nvsKey, ip);
 }
 
-static void ETH_IP_handlerDoSet(dispatcher_t* disp, char* inp){
+static void ETH_IP_handlerDoSet(dispatcher_t* disp, char* inp, void* payload){
   // ESP_LOGI(TAG, "CMD_ETH_IP (%s)", inp);
   ETH_XYZ_handlerDoSet(disp, inp, VAR_IP);
 }
-static void ETH_GW_handlerDoSet(dispatcher_t* disp, char* inp){
+static void ETH_GW_handlerDoSet(dispatcher_t* disp, char* inp, void* payload){
   ETH_XYZ_handlerDoSet(disp, inp, VAR_GW);
 }
-static void ETH_MASK_handlerDoSet(dispatcher_t* disp, char* inp){
+static void ETH_MASK_handlerDoSet(dispatcher_t* disp, char* inp, void* payload){
   ETH_XYZ_handlerDoSet(disp, inp, VAR_MASK);
 }
 
-static void ETH_IP_handlerGet(dispatcher_t* disp, char* inp){
+static void ETH_IP_handlerGet(dispatcher_t* disp, char* inp, void* payload){
   ETH_XYZ_handlerGet(disp, inp, VAR_IP);
 }
-static void ETH_GW_handlerGet(dispatcher_t* disp, char* inp){
+static void ETH_GW_handlerGet(dispatcher_t* disp, char* inp, void* payload){
   ETH_XYZ_handlerGet(disp, inp, VAR_GW);
 }
-static void ETH_MASK_handlerGet(dispatcher_t* disp, char* inp){
+static void ETH_MASK_handlerGet(dispatcher_t* disp, char* inp, void* payload){
   ETH_XYZ_handlerGet(disp, inp, VAR_MASK);
 }
 
 static dispatcherEntry_t ETH_dispEntries[] = {
-  {.key="IP", .handlerPrefix=NULL, .handlerDoSet=ETH_IP_handlerDoSet, .handlerGet=ETH_IP_handlerGet},
-  {.key="GW", .handlerPrefix=NULL, .handlerDoSet=ETH_GW_handlerDoSet, .handlerGet=ETH_GW_handlerGet},
-  {.key="MASK", .handlerPrefix=NULL, .handlerDoSet=ETH_MASK_handlerDoSet, .handlerGet=ETH_MASK_handlerGet},
-  {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL} // end marker
+  {.key="IP", .handlerPrefix=NULL, .handlerDoSet=ETH_IP_handlerDoSet, .handlerGet=ETH_IP_handlerGet, .payload=NULL},
+  {.key="GW", .handlerPrefix=NULL, .handlerDoSet=ETH_GW_handlerDoSet, .handlerGet=ETH_GW_handlerGet, .payload=NULL},
+  {.key="MASK", .handlerPrefix=NULL, .handlerDoSet=ETH_MASK_handlerDoSet, .handlerGet=ETH_MASK_handlerGet, .payload=NULL},
+  {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL} // end marker
 };
 
-void ETH_handlerPrefix(dispatcher_t* disp, char* inp){
+void ETH_handlerPrefix(dispatcher_t* disp, char* inp, void* payload){
   dispatcher_exec(disp, inp, ETH_dispEntries);
 }
 

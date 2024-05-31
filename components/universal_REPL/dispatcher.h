@@ -6,7 +6,8 @@
 typedef struct dispatcher_s dispatcher_t;
 
 // handler function called on identified command. Note, input buffer is modified ('\0' token separation)
-typedef void (*dispatcherFun_t)(dispatcher_t* disp, char* input);
+// payload arg can be optionally used to identify the subsystem (typical use case: If subsystem is replicated, e.g. appears in multiple "channels" or the like)
+typedef void (*dispatcherFun_t)(dispatcher_t* disp, char* input, void* payload);
 
 // - handlerPrefix is called when input starts with key plus ":" e.g. "ETH:" 
 // - handlerDoSet is called when input equals key e.g. "IP"
@@ -16,6 +17,7 @@ typedef struct {
   dispatcherFun_t handlerPrefix;
   dispatcherFun_t handlerDoSet;
   dispatcherFun_t handlerGet;
+  void* payload;
 } dispatcherEntry_t;
 
 // connection-specific function to read more data (supports binary)
@@ -56,6 +58,7 @@ int dispatcher_getArgsNull(dispatcher_t* self, char* inp);
 int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char** args);
 
 int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* outp);
+int dispatcher_parseArg_UINT32(dispatcher_t* self, char* inp, uint32_t* outp);
 
 // === connection access ===
 
