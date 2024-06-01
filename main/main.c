@@ -79,7 +79,8 @@ void app_main(void){
 
   // === initialize NVS ===
   nvsMan_init(&nvsMan);
-
+  PWM_init();
+  
   dispatcherEntry_t dispEntriesRootLevel[] = {
     {.key="ERR", .handlerPrefix=ERR_handlerPrefix, .handlerDoSet=ERR_handlerDoSet, .handlerGet=ERR_handlerGet, .payload=NULL},
     {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
