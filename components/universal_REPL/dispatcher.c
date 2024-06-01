@@ -325,7 +325,7 @@ int dispatcher_parseArg_UINT32(dispatcher_t* self, char* inp, uint32_t* outp){
   default:
     assert(0);
   }
-  if (strcmpi(inp, buf)){
+  if (strcasecmp(inp, buf)){
     errMan_throwARG_NOT_UINT32(&self->errMan);
     return 0;
   }

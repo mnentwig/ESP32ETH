@@ -53,6 +53,10 @@ void errMan_throwOVERFLOW(errMan_t* self){
   errMan_reportError(self, "OVERFLOW");
 }
 
+void errMan_throwRESOURCE(errMan_t* self){
+  errMan_reportError(self, "RESOURCE");
+}
+
 void ERR_handlerPrefix(dispatcher_t* disp, char* inp, void* payload){
   errMan_t* self = &disp->errMan;
   errMan_throwSYNTAX(self); // not yet implemented

@@ -88,7 +88,8 @@ static dispatcherEntry_t ETH_dispEntries[] = {
 };
 
 void ETH_handlerPrefix(dispatcher_t* disp, char* inp, void* payload){
-  dispatcher_exec(disp, inp, ETH_dispEntries);
+  if (!dispatcher_exec(disp, inp, ETH_dispEntries))
+    errMan_throwSYNTAX(&disp->errMan);        
 }
 
 #if 0

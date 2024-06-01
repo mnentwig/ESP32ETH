@@ -24,6 +24,9 @@ void errMan_throwSYNTAX(errMan_t* self);
 // command too long (needs to fit into processing buffer)
 void errMan_throwOVERFLOW(errMan_t* self);
 
+// hardware resources not available
+void errMan_throwRESOURCE(errMan_t* self);
+
 // errMan response to ERR command at toplevel
 void ERR_handlerPrefix(dispatcher_t* disp, char* inp, void* payload);
 void ERR_handlerDoSet(dispatcher_t* disp, char* inp, void* payload);
