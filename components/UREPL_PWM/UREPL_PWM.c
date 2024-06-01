@@ -82,7 +82,7 @@ void PINOUT_handlerDoSet(dispatcher_t* disp, char* inp, void* payload){
   if (!dispatcher_parseArg_UINT32(disp, args[0], &gpio))
     return;
 
-  ESP_LOGI(TAG, "PININ %lu", gpio);
+  ESP_LOGI(TAG, "PINOUT %lu", gpio);
   stop(gpio);
 
   // === locate free timer ===
