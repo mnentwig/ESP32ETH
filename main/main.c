@@ -18,8 +18,8 @@
 nvsMan_t nvsMan; // required feature (for accessing NVS)
 #include "dispatcher.h"
 #include "feature_ETH.h" // ETH command handler
-#include "feature_UART.h" // UART command handler
-#include "UREPL_PWM.h" // PWMDET command handler
+//#include "feature_UART.h" // UART command handler
+#include "UREPL_ADC.h" // ADC command handler
 
 #include "dispatcherconn_ethernet.h" // connection interface to dispatcher
 #include "dispatcherconn_uart.h" // connection interface to dispatcher
@@ -77,15 +77,15 @@ void app_main(void){
   ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0));
   esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
 
-  // === initialize NVS ===
+  // === initialize subsystems ===
   nvsMan_init(&nvsMan);
-  PWM_init();
+  ADC_init();
   
   dispatcherEntry_t dispEntriesRootLevel[] = {
     {.key="ERR", .handlerPrefix=ERR_handlerPrefix, .handlerDoSet=ERR_handlerDoSet, .handlerGet=ERR_handlerGet, .payload=NULL},
     {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
-    {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
-    {.key="PWM", .handlerPrefix=PWM_handlerPrefix, .handlerDoSet=PWM_handlerDoSet, .handlerGet=PWM_handlerGet, .payload=NULL},
+  //  {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
+    {.key="ADC", .handlerPrefix=ADC_handlerPrefix, .handlerDoSet=ADC_handlerDoSet, .handlerGet=ADC_handlerGet, .payload=NULL},
     {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL} // end marker
   }; // lifetime: this thread may not return while connections are up
   

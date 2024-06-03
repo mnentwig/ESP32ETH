@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h> // size_t
 typedef struct dispatcher_s dispatcher_t;
 typedef struct {
   char msg[256];

@@ -374,3 +374,9 @@ IRAM_ATTR void dispatcher_REPL(dispatcher_t* self, dispatcherEntry_t* dispEntrie
     } // while commands to parse in asciiBuffer
   } // while connected
 }
+
+void dispatcher_connWriteBinaryHeader(dispatcher_t* self, uint32_t nBytes){
+  char buf[16];
+  sprintf(buf, "#9%09lu", nBytes); // e.g. 123 => #9000000123"
+  dispatcher_connWrite(self, buf, strlen(buf)); // note, not terminated (binary data to follow immediately)
+}
