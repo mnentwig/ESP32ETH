@@ -19,6 +19,9 @@ void errMan_throwARG_COUNT(errMan_t* self);
 void errMan_throwARG_NOT_IP(errMan_t* self);
 void errMan_throwARG_NOT_UINT32(errMan_t* self);
 
+// generic arg that didn't work e.g. invalid GPIO
+void errMan_throwARG_INVALID(errMan_t* self);
+
 // command not recognized
 void errMan_throwSYNTAX(errMan_t* self);
 

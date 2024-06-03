@@ -20,6 +20,7 @@ nvsMan_t nvsMan; // required feature (for accessing NVS)
 #include "feature_ETH.h" // ETH command handler
 //#include "feature_UART.h" // UART command handler
 #include "UREPL_ADC.h" // ADC command handler
+#include "UREPL_PWM.h" // PWM command handler
 
 #include "dispatcherconn_ethernet.h" // connection interface to dispatcher
 #include "dispatcherconn_uart.h" // connection interface to dispatcher
@@ -80,12 +81,13 @@ void app_main(void){
   // === initialize subsystems ===
   nvsMan_init(&nvsMan);
   ADC_init();
-  
+  PWM_init();
   dispatcherEntry_t dispEntriesRootLevel[] = {
     {.key="ERR", .handlerPrefix=ERR_handlerPrefix, .handlerDoSet=ERR_handlerDoSet, .handlerGet=ERR_handlerGet, .payload=NULL},
     {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
   //  {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
     {.key="ADC", .handlerPrefix=ADC_handlerPrefix, .handlerDoSet=ADC_handlerDoSet, .handlerGet=ADC_handlerGet, .payload=NULL},
+    {.key="PWM", .handlerPrefix=PWM_handlerPrefix, .handlerDoSet=PWM_handlerDoSet, .handlerGet=PWM_handlerGet, .payload=NULL},
     {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL} // end marker
   }; // lifetime: this thread may not return while connections are up
   

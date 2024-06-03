@@ -6,12 +6,13 @@
 #include "string.h" // memset
 
 #include "esp_adc/adc_continuous.h"
+#include "esp_timer.h"
 
 extern errMan_t errMan; // required feature (for dealing with incorrect input)
 static const char *TAG = "ADC";
 
 #define MAXTRANSFER_BYTES 1024
-#define NCHAN 2	
+#define NCHAN 1	
 static uint8_t transferBuf[MAXTRANSFER_BYTES];
 static adc_continuous_handle_t adcHandle;
 static uint32_t nOverflow;
@@ -95,8 +96,11 @@ void READ_handlerGet(dispatcher_t* disp, char* inp, void* payload){
   dispatcher_connWriteBinaryHeader(disp, nBytes);
 
   // === start conversion ===
+  nOverflow = 0;
+  nCapt = 0;
   ESP_ERROR_CHECK(adc_continuous_flush_pool(adcHandle));
   ESP_ERROR_CHECK(adc_continuous_start(adcHandle));
+  uint64_t tStart = esp_timer_get_time();
 
   // === forward data ===  
   while (nBytes){
@@ -112,6 +116,9 @@ void READ_handlerGet(dispatcher_t* disp, char* inp, void* payload){
 	  nBytes -= nActualRead;
   }
   
+  uint64_t tStop = esp_timer_get_time();
+  ESP_LOGI(TAG, "time: %1.3f s nCapt=%lu\tnOverflow=%lu", (tStop-tStart)/1e6f, nCapt, nOverflow);
+
   // === stop conversion ===
   ESP_ERROR_CHECK(adc_continuous_stop(adcHandle));
 }

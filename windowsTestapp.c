@@ -8,6 +8,7 @@
 #include <stdio.h>
 /* memcpy */
 #include <string.h>
+#include <cstdint>
 #pragma comment(lib, "Ws2_32.lib")
 
 void fail(const char* msg){
@@ -49,6 +50,50 @@ char* read(SOCKET s){
   while ((*p == '\n') || (*p == '\r') || (*p == ' ') || (*p == '\t'))
     ++p;
   return p;
+}
+
+char readChar(SOCKET s){
+  char c;
+  while (1){
+    int n = recv(s, &c, 1, 0);
+    if (n < 0)fail("recv");
+    assert(n <= 1);
+    if (n) 
+      return c;
+  }
+}
+
+size_t readDigit(SOCKET s){
+  char c = readChar(s);
+  if ((c < '0') || (c > '9')) fail("readDigit: digit expected");
+  return c - '0';
+}
+
+// caller must free() result
+char* readBinary(SOCKET s){
+  // === expect leading hash character for binary data ===
+  char c = readChar(s); assert(c == '#');  
+
+  // === read number of byte digits ===
+  size_t nDigits = readDigit(s);
+  size_t n = 0;
+
+  // == read number of bytes ===
+  while (nDigits--){    
+    size_t dig = readDigit(s);
+    n *= 10;
+    n += dig;
+  }
+  char* buf = (char*)malloc(n);
+  char* p = buf;
+  while (n){
+    int nRec = recv(s, p, n, 0);
+    if (n <= 0) fail("recv");
+    assert(nRec <= n);
+    n -= nRec;
+    p += nRec;
+  }
+  return buf;
 }
 
 int main(void){
@@ -95,5 +140,17 @@ int main(void){
     if (ix % 50 == 0)
       printf("%i received %s\n", ix, b);
   }
+
+  write(s, "ADC:READ? 100000\n");
+  char* b = readBinary(s);
+  uint16_t* p = (uint16_t*) b;
+  for (size_t ix = 0; ix < 100000; ++ix){
+    uint32_t v = (uint32_t)*(p++);
+    uint32_t chan = v >> 12;
+    uint32_t val = v & 0x0FFF;
+    printf("%i\t%i\n", chan, val);
+  }
+  free(b);
+  
   exit(EXIT_SUCCESS);
 }

@@ -45,6 +45,10 @@ void errMan_throwARG_NOT_UINT32(errMan_t* self){
   errMan_reportError(self, "ARG_NOT_UINT32");
 }
 
+void errMan_throwARG_INVALID(errMan_t* self){
+  errMan_reportError(self, "ARG_INVALID");
+}
+
 void errMan_throwSYNTAX(errMan_t* self){
   errMan_reportError(self, "SYNTAX");
 }
