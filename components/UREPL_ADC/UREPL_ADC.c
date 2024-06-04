@@ -20,8 +20,9 @@ static uint32_t nOverflow;
 static uint32_t nCapt;
 static uint64_t lastCaptBegin;
 static uint64_t lastCaptEnd;
-static uint32_t confRate_Hz;
-
+static uint32_t convRate_Hz;
+static uint32_t convRateFudged_Hz;
+#define RATE_FUDGE_FACTOR 0.8181818f // as fraction: 3^2/11
 static bool IRAM_ATTR cbConvDone(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data){
   nCapt += edata->size / sizeof(adc_digi_output_data_t);
   return 0;
@@ -33,7 +34,8 @@ static bool IRAM_ATTR cbOverflow(adc_continuous_handle_t handle, const adc_conti
 }
 
 void ADC_init(){
-  confRate_Hz = 80000;
+  convRate_Hz = 80000;
+  convRateFudged_Hz = convRate_Hz / RATE_FUDGE_FACTOR;
   nOverflow = 0;
   nCapt = 0;
   lastCaptBegin = 0;
@@ -84,7 +86,7 @@ void READ_handlerGet(dispatcher_t* disp, char* inp, void* payload){
 
   // === digi ctrl config ===
   adc_continuous_config_t dig_cfg = {
-    .sample_freq_hz = confRate_Hz,
+    .sample_freq_hz = convRateFudged_Hz,
     .conv_mode = ADC_CONV_SINGLE_UNIT_1,
     .format = ADC_DIGI_OUTPUT_FORMAT_TYPE1,
     .pattern_num = NCHAN
@@ -156,7 +158,7 @@ void LASTRATE_handlerGet(dispatcher_t* disp, char* inp, void* payload){
 
 void RATE_handlerGet(dispatcher_t* disp, char* inp, void* payload){
   if (!dispatcher_getArgsNull(disp, inp)) return;
-  dispatcher_connWriteUINT32(disp, confRate_Hz);
+  dispatcher_connWriteUINT32(disp, convRate_Hz);
 }
 
 void RATE_handlerDoSet(dispatcher_t* disp, char* inp, void* payload){
@@ -165,12 +167,16 @@ void RATE_handlerDoSet(dispatcher_t* disp, char* inp, void* payload){
   uint32_t r_Hz;
   if (!dispatcher_parseArg_UINT32(disp, args[0], &r_Hz))
     return;
-  if (r_Hz < SOC_ADC_SAMPLE_FREQ_THRES_LOW)
+
+  uint32_t rFudged_Hz  = (float)r_Hz / RATE_FUDGE_FACTOR; // FW bug?
+  if (rFudged_Hz < SOC_ADC_SAMPLE_FREQ_THRES_LOW)
     errMan_throwARG_INVALID(&disp->errMan);
-  else if (r_Hz > SOC_ADC_SAMPLE_FREQ_THRES_HIGH)
+  else if (rFudged_Hz > SOC_ADC_SAMPLE_FREQ_THRES_HIGH)
     errMan_throwARG_INVALID(&disp->errMan);
-  else
-    confRate_Hz = r_Hz;
+  else {    
+    convRate_Hz = r_Hz;
+    convRateFudged_Hz = rFudged_Hz;
+  }
 }
 
 static dispatcherEntry_t ADC_dispEntries[] = {

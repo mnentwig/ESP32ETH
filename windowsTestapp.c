@@ -10,6 +10,7 @@
 #include <string.h>
 #include <cstdint>
 #include <signal.h>
+#include <stdlib.h>
 #pragma comment(lib, "Ws2_32.lib")
 
 void sigintHandler(int sig_num) { 
@@ -119,8 +120,7 @@ void adcRateSweep(SOCKET s){
     
     sprintf(buf, "ADC:READ? %i", (int)(tNom_s*confRate_Hz+0.5));
     write(s, buf);
-    char* b = readBinary(s);
-    free(b);
+    char* b = readBinary(s); free(b);
     
     char* r = writeRead(s, "ADC:LASTRATE?");
     printf("%i\t%s\n", (int)(confRate_Hz+0.5), r);
@@ -168,32 +168,45 @@ int main(void){
   }
   printf("connected\n"); fflush(stdout);
 
-  adcRateSweep(s);
-  #if 0
-    
-  
+  //adcRateSweep(s);
+#if 0
   for (size_t ix = 0; ix < 1000; ++ix){
     write(s, "ERR?");
     char* b = read(s);
     if (ix % 50 == 0)
       printf("%i received %s\n", ix, b);
   }
+#endif  
 
-  write(s, "ADC:READ? 100000");
+  uint32_t confRate_Hz = 50000;
+  sprintf(buf, "ADC:RATE %i", (int)confRate_Hz);
+  write(s, buf);
+  
+  float tNom_s = 1.0f;
+
+  size_t nSamples = (int)(tNom_s*confRate_Hz+0.5);
+  sprintf(buf, "ADC:READ? %i", nSamples);
+  write(s, buf);
   char* b = readBinary(s);
+  
+  // === write output ===
   uint16_t* p = (uint16_t*) b;
-  for (size_t ix = 0; ix < 100000; ++ix){
+  FILE* f = fopen("out.txt", "wb");
+  for (size_t ix = 0; ix < nSamples; ++ix){
     uint32_t v = (uint32_t)*(p++);
     uint32_t chan = v >> 12;
     uint32_t val = v & 0x0FFF;
     printf("%i\t%i\n", chan, val);
+    fprintf(f, "%i\t%i\n", chan, val);
   }
   free(b);
+  fclose(f);
 
-  write(s, "ADC:LASTRATE?");
-  b = read(s);
-  printf(b);
-#endif  
+  // === report rate ===
+  char* r = writeRead(s, "ADC:LASTRATE?");
+  printf("rConf\trActual\n");
+  printf("%i\t%s\n", (int)(confRate_Hz+0.5), r);
+  
   closesocket(s);
   exit(EXIT_SUCCESS);
 }
