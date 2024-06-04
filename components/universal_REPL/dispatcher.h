@@ -69,6 +69,8 @@ size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax);
 void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes);
 // shorthand for above on C string, adds '\n' termination
 void dispatcher_connWriteCString(dispatcher_t* self, const char* str);
+// shorthand for above to send number
+void dispatcher_connWriteUINT32(dispatcher_t* self, uint32_t val);
 
 // sends binary header (SCPI style) for a follow-up reply containing nBytes of data
 void dispatcher_connWriteBinaryHeader(dispatcher_t* self, uint32_t nBytes);

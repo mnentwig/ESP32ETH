@@ -1,5 +1,5 @@
 // compile using e.g. MINGW on windows
-// g++ windowsTestapp.c -lWs2_32
+// g++ windowsTestapp.c -lWs2_32 -O -static
 #define WIN32_LEAN_AND_MEAN
 #define NOSOUND
 #include <windows.h>
@@ -9,7 +9,14 @@
 /* memcpy */
 #include <string.h>
 #include <cstdint>
+#include <signal.h>
 #pragma comment(lib, "Ws2_32.lib")
+
+void sigintHandler(int sig_num) { 
+  printf("Ctrl+C detected\n"); 
+  fflush(stdout);
+  exit(EXIT_FAILURE);
+} 
 
 void fail(const char* msg){
   fprintf(stderr, "error: %s\n", msg);
@@ -50,6 +57,11 @@ char* read(SOCKET s){
   while ((*p == '\n') || (*p == '\r') || (*p == ' ') || (*p == '\t'))
     ++p;
   return p;
+}
+
+char* writeRead(SOCKET s, const char* cmd){
+  write(s, cmd);
+  return read(s);
 }
 
 char readChar(SOCKET s){
@@ -96,7 +108,29 @@ char* readBinary(SOCKET s){
   return buf;
 }
 
+void adcRateSweep(SOCKET s){
+  char buf[256];
+  float confRate_Hz = 20000;
+  while (confRate_Hz < 2e6){
+    sprintf(buf, "ADC:RATE %i", (int)confRate_Hz);
+    write(s, buf);
+
+    float tNom_s = 1.0f;
+    
+    sprintf(buf, "ADC:READ? %i", (int)(tNom_s*confRate_Hz+0.5));
+    write(s, buf);
+    char* b = readBinary(s);
+    free(b);
+    
+    char* r = writeRead(s, "ADC:LASTRATE?");
+    printf("%i\t%s\n", (int)(confRate_Hz+0.5), r);
+    fflush(stdout);
+    confRate_Hz *= 1.1;
+  }
+}
+
 int main(void){
+  signal(SIGINT, sigintHandler);
   initWinsock();
 
   /***********************************************/
@@ -134,6 +168,10 @@ int main(void){
   }
   printf("connected\n"); fflush(stdout);
 
+  adcRateSweep(s);
+  #if 0
+    
+  
   for (size_t ix = 0; ix < 1000; ++ix){
     write(s, "ERR?");
     char* b = read(s);
@@ -141,7 +179,7 @@ int main(void){
       printf("%i received %s\n", ix, b);
   }
 
-  write(s, "ADC:READ? 100000\n");
+  write(s, "ADC:READ? 100000");
   char* b = readBinary(s);
   uint16_t* p = (uint16_t*) b;
   for (size_t ix = 0; ix < 100000; ++ix){
@@ -151,6 +189,11 @@ int main(void){
     printf("%i\t%i\n", chan, val);
   }
   free(b);
-  
+
+  write(s, "ADC:LASTRATE?");
+  b = read(s);
+  printf(b);
+#endif  
+  closesocket(s);
   exit(EXIT_SUCCESS);
 }

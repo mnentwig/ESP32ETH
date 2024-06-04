@@ -340,9 +340,15 @@ IRAM_ATTR void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t 
   self->writeFn(self->connSpecArg, buf, nBytes);
 }
 
-IRAM_ATTR void dispatcher_connWriteCString(dispatcher_t* self, const char* str){
+void dispatcher_connWriteCString(dispatcher_t* self, const char* str){
   self->writeFn(self->connSpecArg, str, strlen(str));
   self->writeFn(self->connSpecArg, "\n", 1);
+}
+
+void dispatcher_connWriteUINT32(dispatcher_t* self, uint32_t val){
+  char buf[20];
+  sprintf(buf, "%lu\n", val);
+  self->writeFn(self->connSpecArg, buf, strlen(buf));  
 }
 
 IRAM_ATTR void dispatcher_REPL(dispatcher_t* self, dispatcherEntry_t* dispEntries){
