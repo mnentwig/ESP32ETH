@@ -61,6 +61,10 @@ void errMan_throwRESOURCE(errMan_t* self){
   errMan_reportError(self, "RESOURCE");
 }
 
+void errMan_throwFAIL(errMan_t* self){
+  errMan_reportError(self, "FAIL");
+}
+
 void ERR_handlerPrefix(dispatcher_t* disp, char* inp, void* payload){
   errMan_t* self = &disp->errMan;
   errMan_throwSYNTAX(self); // not yet implemented

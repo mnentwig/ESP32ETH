@@ -286,6 +286,22 @@ IRAM_ATTR int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char**
   return 1;
 }
 
+void dispatcher_getArgsUpToN(dispatcher_t* self, char* inp, size_t* n, char** args){
+  size_t nRemaining = *n;
+  size_t nActual = 0;
+
+  char* itBegin;
+  char* itNext;
+  while (nRemaining--){
+    if (!nextToken(inp, &itBegin, &itNext))
+      break;
+    *(args++) = itBegin;
+    inp = itNext;
+    ++nActual;
+  }
+  *n = nActual;  
+}
+
 static void util_printIp(char* buf, uint32_t ip){
   sprintf(buf, "%d.%d.%d.%d", (int)(ip >> 0) & 0xFF, (int)(ip >> 8) & 0xFF, (int)(ip >> 16) & 0xFF, (int)(ip >> 24) & 0xFF);
 }
@@ -332,11 +348,21 @@ int dispatcher_parseArg_UINT32(dispatcher_t* self, char* inp, uint32_t* outp){
   return 1;
 }
 
+int dispatcher_parseArgMinMax_UINT32(dispatcher_t* self, char* inp, uint32_t* outp, uint32_t minval, uint32_t maxval){
+  if (!dispatcher_parseArg_UINT32(self, inp, outp))
+    return 0;
+  if ((*outp >= minval) && (*outp <= maxval))
+    return 1;
+  errMan_throwARG_INVALID(&self->errMan);
+  return 0;
+}
+
+
 size_t dispatcher_connRead(dispatcher_t* self, char* buf, size_t nMax){
   return self->readFn(self->connSpecArg, buf, nMax);
 }
 
-IRAM_ATTR void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes){
+void dispatcher_connWrite(dispatcher_t* self, const char* buf, size_t nBytes){
   self->writeFn(self->connSpecArg, buf, nBytes);
 }
 

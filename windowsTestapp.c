@@ -129,6 +129,15 @@ void adcRateSweep(SOCKET s){
   }
 }
 
+void checkNoError(SOCKET s){
+  write(s, "ERR?");
+  char* b = read(s);
+  if (!strcmp(b, "NO_ERROR"))
+    return;
+  fprintf(stderr, "%s\n", b);
+  exit(EXIT_FAILURE);
+}
+
 int main(void){
   signal(SIGINT, sigintHandler);
   initWinsock();
@@ -151,13 +160,23 @@ int main(void){
 			  (char *) &flag,  /* the cast is historical cruft */
 			  sizeof(int));    /* length of option value */
   if (result < 0) fail("setsockopts");
-	    
+  #if 0
+  struct timeval timeout;      
+  timeout.tv_sec = 3;
+  timeout.tv_usec = 0;
+  
+  if (setsockopt (s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout) < 0)
+    fail("setsockopt (RCVTIMEO)\n");
+  
+  if (setsockopt (s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof timeout) < 0)
+    fail("setsockopt (SNDTIMEO)\n");
+#endif  
   /***********************************************/
   /* connect socket to given address */
   /***********************************************/
   struct sockaddr_in peeraddr_in;
   memset(&peeraddr_in, 0, sizeof(struct sockaddr_in));  
-  peeraddr_in.sin_addr.s_addr = inet_addr("192.168.178.123");
+  peeraddr_in.sin_addr.s_addr = inet_addr("192.168.178.40"); // 123
   peeraddr_in.sin_family = AF_INET;
   unsigned short port = 76;
   peeraddr_in.sin_port = htons(port);
@@ -167,6 +186,7 @@ int main(void){
     fail("connect");
   }
   printf("connected\n"); fflush(stdout);
+  checkNoError(s);
 
   //adcRateSweep(s);
 #if 0
@@ -181,6 +201,19 @@ int main(void){
   uint32_t confRate_Hz = 50000;
   sprintf(buf, "ADC:RATE %i", (int)confRate_Hz);
   write(s, buf);
+  checkNoError(s);
+
+  write(s, "ADC:ATT HIGH");
+  checkNoError(s);
+  char* r = writeRead(s, "ADC:ATT?");
+  printf("ATT is %s\n", r);
+
+  const size_t nChan = 3;
+  write(s, "ADC:PAT 32 33 34");
+  checkNoError(s);
+
+  r = writeRead(s, "ADC:PAT?");
+  printf("PAT is %s\n", r);
   
   float tNom_s = 1.0f;
 
@@ -201,11 +234,13 @@ int main(void){
   }
   free(b);
   fclose(f);
+  checkNoError(s);
 
   // === report rate ===
-  char* r = writeRead(s, "ADC:LASTRATE?");
+  r = writeRead(s, "ADC:LASTRATE?");
   printf("rConf\trActual\n");
   printf("%i\t%s\n", (int)(confRate_Hz+0.5), r);
+  checkNoError(s);
   
   closesocket(s);
   exit(EXIT_SUCCESS);

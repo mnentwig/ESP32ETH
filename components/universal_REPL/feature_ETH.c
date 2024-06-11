@@ -146,7 +146,7 @@ const char* dispatcher_execCmd(dispatcher_t* self, const char* inp){
 	  return cmd_ETH_XYZ_set(self, pTokenBegin, pTokenEnd, "netmask");	
 	}
       } else {
-	errMan_reportError(&self->errMan, "SYNTAX_ERROR");
+	errMan_throwSYNTAX(&self->errMan);
       }
     }
     

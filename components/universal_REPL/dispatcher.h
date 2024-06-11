@@ -57,8 +57,13 @@ int dispatcher_getArgsNull(dispatcher_t* self, char* inp);
 // 0 otherwise, with appropriate error in errMan
 int dispatcher_getArgs(dispatcher_t* self, char* inp, size_t n, char** args);
 
+// returns up to n args, updates n to the actual number
+void dispatcher_getArgsUpToN(dispatcher_t* self, char* inp, size_t* n, char** args);
+
+
 int dispatcher_parseArg_IP(dispatcher_t* self, char* inp, uint32_t* outp);
 int dispatcher_parseArg_UINT32(dispatcher_t* self, char* inp, uint32_t* outp);
+int dispatcher_parseArgMinMax_UINT32(dispatcher_t* self, char* inp, uint32_t* outp, uint32_t minval, uint32_t maxval);
 
 // === connection access ===
 
