@@ -80,6 +80,7 @@ int connPort[NCONNMAX];
 static dispatcherEntry_t dispEntriesRootLevel[] = {
   {.key="ERR", .handlerPrefix=ERR_handlerPrefix, .handlerDoSet=ERR_handlerDoSet, .handlerGet=ERR_handlerGet, .payload=NULL},
   {.key="ETH", .handlerPrefix=ETH_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
+  {.key="WIFI", .handlerPrefix=WIFI_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
   //  {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
   {.key="ADC", .handlerPrefix=ADC_handlerPrefix, .handlerDoSet=ADC_handlerDoSet, .handlerGet=ADC_handlerGet, .payload=NULL},
   {.key="PWM", .handlerPrefix=PWM_handlerPrefix, .handlerDoSet=PWM_handlerDoSet, .handlerGet=PWM_handlerGet, .payload=NULL},

@@ -33,6 +33,34 @@ void nvsMan_set_u32(nvsMan_t* self, const char* key, uint32_t val){
   xSemaphoreGive(self->mutex);
 }
 
+// if not found, returns "".
+// caller must free() returned value.
+char* nvsMan_get_str(nvsMan_t* self, const char* key){
+  char* retval;
+  xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY);
+  size_t length;
+  ESP_LOGI(TAG, "get_str '%s'", key);
+  if (ESP_OK != nvs_get_str(self->handle, key, /*out_value*/NULL, &length)) goto fail_returnBlank;
+  
+  retval = (char*)calloc(length, sizeof(char));
+  ESP_ERROR_CHECK(nvs_get_str(self->handle, key, /*out_value*/retval, &length));
+  ESP_LOGI(TAG, "returns '%s'", retval);
+  goto done;
+  
+ fail_returnBlank:
+  retval = (char*)calloc(1, sizeof(char)); // single \0 char
+ done:
+  xSemaphoreGive(self->mutex);
+  return retval; 
+}
+
+void nvsMan_set_str(nvsMan_t* self, const char* key, const char* str){
+  xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY);
+  ESP_LOGI(TAG, "set_str '%s' => '%s'", key, str);
+  ESP_ERROR_CHECK(nvs_set_str(self->handle, key, str));
+  xSemaphoreGive(self->mutex);
+}
+
 static void nvsMan_initializeBlankField_u32(nvsMan_t* self, const char* key, uint32_t val){
   uint32_t dummyVal;
   xSemaphoreTake(self->mutex, /*wait indefinitely*/portMAX_DELAY);
