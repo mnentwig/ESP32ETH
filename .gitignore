@@ -3,3 +3,6 @@ build
 a.exe
 log.txt
 msys-2.0.dll
+windowsTestapp.exe
+escAlg.exe
+*.txt

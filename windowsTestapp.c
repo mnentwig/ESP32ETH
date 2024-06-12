@@ -9,15 +9,8 @@
 /* memcpy */
 #include <string.h>
 #include <cstdint>
-#include <signal.h>
 #include <stdlib.h>
-#pragma comment(lib, "Ws2_32.lib")
-
-void sigintHandler(int sig_num) { 
-  printf("Ctrl+C detected\n"); 
-  fflush(stdout);
-  exit(EXIT_FAILURE);
-} 
+//#pragma comment(lib, "Ws2_32.lib")
 
 void fail(const char* msg){
   fprintf(stderr, "error: %s\n", msg);
@@ -41,6 +34,51 @@ void write(SOCKET s, const char* msg){
   sprintf(buf, "%s\n", msg);
   int count = send(s, buf, strlen(buf), 0);
   if (count == SOCKET_ERROR) fail("send: SOCKET_ERROR");
+}
+char* readBinary(SOCKET s);
+void checkNoError(SOCKET s);
+void writeCheckErr(SOCKET s, const char* cmd){
+  write(s, cmd);
+  checkNoError(s);
+}
+
+void ESC_alg(SOCKET s){
+  writeCheckErr(s, "ADC:PAT 32 33");
+  writeCheckErr(s, "ADC:RATE 1000000");
+  writeCheckErr(s, "ADC:ATT HIGH");
+  write(s, "ADC:READ? 500000");
+  char* b = readBinary(s);
+  checkNoError(s);
+
+  uint16_t vA[250000];
+  uint16_t vB[250000];
+  size_t ixA = 0;
+  size_t ixB = 0;
+  uint16_t* p = (uint16_t*) b;
+  for (size_t ix = 0; ix < 500000; ++ix){
+    uint32_t v = (uint32_t)*(p++);
+    uint32_t chan = v >> 12;
+    uint32_t val = v & 0x0FFF;
+    if (chan == 4)
+      vA[ixA++] = val;
+    else if (chan == 5)
+      vB[ixB++] = val;
+    else{
+      fprintf(stderr, "unexpected ADC channel: %u\n", chan);
+      exit(EXIT_FAILURE); 
+    }
+  }
+  free(b);
+  
+  size_t n = ixA > ixB ? ixB: ixA;
+
+  FILE* f = fopen("out.txt", "wb");
+  for (size_t ix = 0; ix < n; ++ix)
+    fprintf(f, "%i\t%i\n", (int)vA[ix], (int)vB[ix]);
+  fclose(f);
+
+  printf("done! %lu %lu\n", ixA, ixB);
+  exit(EXIT_SUCCESS);
 }
 
 char buf[65536];
@@ -102,7 +140,7 @@ char* readBinary(SOCKET s){
   while (n){
     int nRec = recv(s, p, n, 0);
     if (n <= 0) fail("recv");
-    assert(nRec <= n);
+    assert(nRec <= (int)n);
     n -= nRec;
     p += nRec;
   }
@@ -139,7 +177,6 @@ void checkNoError(SOCKET s){
 }
 
 int main(void){
-  signal(SIGINT, sigintHandler);
   initWinsock();
 
   /***********************************************/
@@ -188,6 +225,8 @@ int main(void){
   printf("connected\n"); fflush(stdout);
   checkNoError(s);
 
+  ESC_alg(s);
+  
   //adcRateSweep(s);
 #if 0
   for (size_t ix = 0; ix < 1000; ++ix){
@@ -198,7 +237,7 @@ int main(void){
   }
 #endif  
 
-  uint32_t confRate_Hz = 50000;
+  uint32_t confRate_Hz = 200000;
   sprintf(buf, "ADC:RATE %i", (int)confRate_Hz);
   write(s, buf);
   checkNoError(s);
@@ -208,17 +247,15 @@ int main(void){
   char* r = writeRead(s, "ADC:ATT?");
   printf("ATT is %s\n", r);
 
-  const size_t nChan = 3;
-  write(s, "ADC:PAT 32 33 34");
+  write(s, "ADC:PAT 32 33");
   checkNoError(s);
 
   r = writeRead(s, "ADC:PAT?");
   printf("PAT is %s\n", r);
   
   float tNom_s = 1.0f;
-
   size_t nSamples = (int)(tNom_s*confRate_Hz+0.5);
-  sprintf(buf, "ADC:READ? %i", nSamples);
+  sprintf(buf, "ADC:READ? %lu", nSamples);
   write(s, buf);
   char* b = readBinary(s);
   
