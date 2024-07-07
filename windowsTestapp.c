@@ -43,7 +43,7 @@ void writeCheckErr(SOCKET s, const char* cmd){
 }
 
 void ESC_alg(SOCKET s){
-  writeCheckErr(s, "ADC:PAT 32 33");
+  writeCheckErr(s, "ADC:PAT 36 39");
   writeCheckErr(s, "ADC:RATE 1000000");
   writeCheckErr(s, "ADC:ATT HIGH");
   write(s, "ADC:READ? 500000");
@@ -59,9 +59,9 @@ void ESC_alg(SOCKET s){
     uint32_t v = (uint32_t)*(p++);
     uint32_t chan = v >> 12;
     uint32_t val = v & 0x0FFF;
-    if (chan == 4)
+    if ((chan == 4)  || (chan == 0))
       vA[ixA++] = val;
-    else if (chan == 5)
+    else if ((chan == 5) || (chan == 3))
       vB[ixB++] = val;
     else{
       fprintf(stderr, "unexpected ADC channel: %u\n", chan);
@@ -213,7 +213,7 @@ int main(void){
   /***********************************************/
   struct sockaddr_in peeraddr_in;
   memset(&peeraddr_in, 0, sizeof(struct sockaddr_in));  
-  peeraddr_in.sin_addr.s_addr = inet_addr("192.168.178.40"); // 123
+  peeraddr_in.sin_addr.s_addr = inet_addr("192.168.178.123"); // 123
   peeraddr_in.sin_family = AF_INET;
   unsigned short port = 76;
   peeraddr_in.sin_port = htons(port);

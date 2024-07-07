@@ -180,7 +180,7 @@ void app_main(void){
   } // ETH scope
  skip_ETH:
   
-  if (WIFI_init()){
+  if (0 && WIFI_init()){
     // === start TCP/IP server threads on WIFI ===
     uint32_t myIpAddr = WIFI_getIp();
     for (size_t ixConn = 0; ixConn < NCONNMAX; ++ixConn){
