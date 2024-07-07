@@ -82,6 +82,7 @@ int WIFI_init(){
   
   char* ssid = nvsMan_get_str(&nvsMan, "WIFI_SSID");
   char* pw = nvsMan_get_str(&nvsMan, "WIFI_PW");
+  printf("SSID=%s pw=%s\n", ssid, pw);
   wifi_config_t wifi_config = {
     .sta = {
       .threshold.authmode = WIFI_AUTH_OPEN,
@@ -98,6 +99,14 @@ int WIFI_init(){
   ESP_ERROR_CHECK(esp_wifi_start() );
   
   ESP_LOGI(TAG, "wifi_init_sta finished.");
+  #if 0
+
+  // can't wait for WIFI to connect, otherwise the UART never becomes available to set up WIFI SSID/PW...
+  // continuing doesn't seem to have any ill effects on the WIFI thread, though (TBD check what happens exactly. Probably some socket call blocks correctly until connected and everything is fine.) 
+  
+
+
+
   
   /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
    * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
@@ -119,6 +128,9 @@ int WIFI_init(){
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
     return 0;
   }
+  #else
+  return 1;
+  #endif
 }
 
 uint32_t WIFI_getIp(){
@@ -127,7 +139,7 @@ uint32_t WIFI_getIp(){
 
 
 
-
+// FIXME this is copy-and-paste nonsense from ETH fixed IP when WLAN uses DHCP
 static const char* NVS_KEY_IP = "WIFI_ip";
 static const char* NVS_KEY_GW = "WIFI_gw";
 static const char* NVS_KEY_MASK = "WIFI_mask";

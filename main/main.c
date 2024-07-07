@@ -22,6 +22,7 @@ nvsMan_t nvsMan; // required feature (for accessing NVS)
 //#include "feature_UART.h" // UART command handler
 #include "UREPL_ADC.h" // ADC command handler
 #include "UREPL_PWM.h" // PWM command handler
+#include "UREPL_camera.h" // CAM command handler
 
 #include "dispatcherconn_ethernet.h" // connection interface to dispatcher
 #include "dispatcherconn_uart.h" // connection interface to dispatcher
@@ -117,14 +118,16 @@ void app_main(void){
 
   // === initialize subsystems ===
   nvsMan_init(&nvsMan);
-  ADC_init();
-  PWM_init();
+  camera_init();
+  //ADC_init();
+  //PWM_init();
 
   // Initialize TCP/IP network interface aka the esp-netif (should be called only once in application)
   ESP_ERROR_CHECK(esp_netif_init());
   // Create default event loop that running in background
   ESP_ERROR_CHECK(esp_event_loop_create_default());
-  
+
+  goto skip_ETH; // !!!
   { // ETH scope
     // Initialize Ethernet driver
     uint8_t eth_port_cnt = 0;
@@ -190,7 +193,7 @@ void app_main(void){
 	
 	int ret = xTaskCreatePinnedToCore(dpConnEth_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY+1, NULL, portNUM_PROCESSORS - 1);
 	if (ret != pdPASS) {
-	  ESP_LOGE(TAG, "failed to create eth task");
+	  ESP_LOGE(TAG, "failed to create WIFI task");
 	  ESP_ERROR_CHECK(ESP_FAIL);
 	}
       } // if ETH
@@ -210,6 +213,7 @@ void app_main(void){
   }
     
   while (1){
+    ESP_LOGI(TAG, "zzz");
     vTaskDelay(1000/portTICK_PERIOD_MS);
   }
 }
