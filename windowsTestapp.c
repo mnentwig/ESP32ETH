@@ -213,7 +213,7 @@ int main(void){
   /***********************************************/
   struct sockaddr_in peeraddr_in;
   memset(&peeraddr_in, 0, sizeof(struct sockaddr_in));  
-  peeraddr_in.sin_addr.s_addr = inet_addr("192.168.178.40"); // 123
+  peeraddr_in.sin_addr.s_addr = inet_addr("192.168.178.172"); // 123
   peeraddr_in.sin_family = AF_INET;
   unsigned short port = 76;
   peeraddr_in.sin_port = htons(port);
@@ -225,16 +225,17 @@ int main(void){
   printf("connected\n"); fflush(stdout);
   checkNoError(s);
 
-  ESC_alg(s);
+  //  ESC_alg(s);
   
   //adcRateSweep(s);
-#if 0
+#if 1
   for (size_t ix = 0; ix < 1000; ++ix){
     write(s, "ERR?");
     char* b = read(s);
-    if (ix % 50 == 0)
+    //    if (ix % 50 == 0)
       printf("%i received %s\n", ix, b);
   }
+  return 0;
 #endif  
 
   uint32_t confRate_Hz = 200000;

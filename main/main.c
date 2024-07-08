@@ -85,6 +85,7 @@ static dispatcherEntry_t dispEntriesRootLevel[] = {
   //  {.key="UART", .handlerPrefix=UART_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
   {.key="ADC", .handlerPrefix=ADC_handlerPrefix, .handlerDoSet=ADC_handlerDoSet, .handlerGet=ADC_handlerGet, .payload=NULL},
   {.key="PWM", .handlerPrefix=PWM_handlerPrefix, .handlerDoSet=PWM_handlerDoSet, .handlerGet=PWM_handlerGet, .payload=NULL},
+  {.key="CAM", .handlerPrefix=CAM_handlerPrefix, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL},
   {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL} // end marker
 };
 
@@ -214,6 +215,6 @@ void app_main(void){
     
   while (1){
     ESP_LOGI(TAG, "zzz");
-    vTaskDelay(1000/portTICK_PERIOD_MS);
+    vTaskDelay(10000/portTICK_PERIOD_MS);
   }
 }

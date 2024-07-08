@@ -99,7 +99,7 @@ int WIFI_init(){
   ESP_ERROR_CHECK(esp_wifi_start() );
   
   ESP_LOGI(TAG, "wifi_init_sta finished.");
-  #if 0
+  #if 1
 
   // can't wait for WIFI to connect, otherwise the UART never becomes available to set up WIFI SSID/PW...
   // continuing doesn't seem to have any ill effects on the WIFI thread, though (TBD check what happens exactly. Probably some socket call blocks correctly until connected and everything is fine.) 

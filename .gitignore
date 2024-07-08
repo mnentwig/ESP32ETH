@@ -6,3 +6,7 @@ msys-2.0.dll
 windowsTestapp.exe
 escAlg.exe
 *.txt
+*#
+sdkconfig.old
+*.exe
+dspInC

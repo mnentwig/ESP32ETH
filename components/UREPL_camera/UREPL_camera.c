@@ -6,8 +6,9 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "esp_camera.h"
+
+#include "dispatcher.h"
 
 #define BOARD_ESP32CAM_AITHINKER 1
 
@@ -87,10 +88,19 @@ static camera_config_t camera_config = {
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
 
-    .pixel_format = PIXFORMAT_RGB565, //YUV422,GRAYSCALE,RGB565,JPEG
-    .frame_size = FRAMESIZE_QVGA,    //QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
+    .pixel_format = PIXFORMAT_JPEG, //YUV422,GRAYSCALE,RGB565,JPEG
 
-    .jpeg_quality = 12, //0-63, for OV series camera sensors, lower number means higher quality
+    // FRAMESIZE_UXGA (1600 x 1200)
+    // FRAMESIZE_QVGA (320 x 240)
+    // FRAMESIZE_CIF (352 x 288)
+    // FRAMESIZE_VGA (640 x 480)
+    // FRAMESIZE_SVGA (800 x 600)
+    // FRAMESIZE_XGA (1024 x 768)
+    // FRAMESIZE_SXGA (1280 x 1024)
+    // QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+    .frame_size = FRAMESIZE_XGA,    //QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
+
+    .jpeg_quality = 10, //0-63, for OV series camera sensors, lower number means higher quality
     .fb_count = 1,       //When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
     .fb_location = CAMERA_FB_IN_PSRAM,
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
@@ -103,28 +113,27 @@ void camera_init(void){
   }
 }
 
-#if 0
-void app_main(void)
-{
-#if ESP_CAMERA_SUPPORTED
-    if(ESP_OK != init_camera()) {
-        return;
-    }
-
-    while (1)
-    {
-        ESP_LOGI(TAG, "Taking picture...");
-        camera_fb_t *pic = esp_camera_fb_get();
-
-        // use pic->buf to access the image
-        ESP_LOGI(TAG, "Picture taken! Its size was: %zu bytes", pic->len);
-        esp_camera_fb_return(pic);
-
-        vTaskDelay(5000 / portTICK_RATE_MS);
-    }
-#else
-    ESP_LOGE(TAG, "Camera support is not available for this chip");
-    return;
-#endif
+static void CAPT_handlerGet(dispatcher_t* disp, char* inp, void* payload){
+  if (!dispatcher_getArgsNull(disp, inp)) return;
+  
+  ESP_LOGI(TAG, "CAPT?");
+  camera_fb_t *pic = esp_camera_fb_get();
+  
+  //ESP_LOGI(TAG, "pic size: %zu bytes", pic->len);
+  dispatcher_connWriteBinaryHeader(disp, pic->len);
+  dispatcher_connWrite(disp, (char*)pic->buf, pic->len);
+  //ESP_LOGI(TAG, "written");
+  
+  esp_camera_fb_return(pic);
 }
-#endif
+
+static dispatcherEntry_t camera_dispEntries[] = {
+  {.key="CAPT", .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=CAPT_handlerGet, .payload=NULL},
+  {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL} // end marker
+};
+
+void CAM_handlerPrefix(dispatcher_t* disp, char* inp, void* payload){
+  if (!dispatcher_exec(disp, inp, camera_dispEntries))
+    errMan_throwSYNTAX(&disp->errMan);        
+}
+

@@ -68,3 +68,10 @@ use 5.2.1
 - disable Nagle's algorithm
 - 240 MHz CPU clock won't hurt
 - FreeRTOS tick rate should not matter if ETH task prio is sufficient
+- WIFI seems a bit slower but that may be my home network
+
+# notes on memory, camera
+The camera needs PSRAM enabled (menuconfig "components", typically 80 MHz). Select malloc with flag (plain memorymapped won't work with camera), but don't select full malloc or everything will slow down excessively.
+
+At the moment, ADC and camera seem to clash in interrupt mapping (would moving camera or ADC init to core 1 help?)
+
