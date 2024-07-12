@@ -1,0 +1,3 @@
+[submodule "windowsTestappCamera/tcpIpWrapper"]
+	path = windowsTestappCamera/tcpIpWrapper
+	url = git@github.com:mnentwig/tcpIpWrapper.git

@@ -1,3 +1,4 @@
+#error use exceptions for disconnect handling
 // mingw: pacman -S mingw-w64-x86_64-fltk
 // fltk-config --compile windowsTestappCamera.cpp
 #include <FL/Fl.H>
@@ -150,25 +151,34 @@ extern "C" void* udpListen(void* p){
   return 0;
 }
 
-void write(SOCKET s, const char* msg){
+int write(SOCKET s, const char* msg){
   //printf("write: %s\n", msg); fflush(stdout);
   char buf[65536];
   sprintf(buf, "%s\n", msg);
-  int count = send(s, buf, strlen(buf), 0);
-  if (count == SOCKET_ERROR) fail("send: SOCKET_ERROR");
+  size_t n = strlen(buf);
+  const char* p = buf;
+  while (n){
+    int nSent = send(s, p, n, 0);
+    if (nSent < 0)
+      return 0; // fail
+    p += nSent;
+    n -= nSent;
+  }
+  return 1;
 }
-void checkNoError(SOCKET s);
+
+int checkNoError(SOCKET s);
 void writeCheckErr(SOCKET s, const char* cmd){
   write(s, cmd);
   checkNoError(s);
 }
 
 char buf[65536]; // get rid of this use malloc
-char* read(SOCKET s){
+const char* read(SOCKET s){
   char* p = buf;
   while (1){
     int n = recv(s, p, 1, 0);
-    if (n <= 0) fail("recv");
+    if (n <= 0) return NULL;
     if ((*p == '\n') || (*p == '\r') || (*p == '\0'))
       break;
     ++p;
@@ -180,21 +190,23 @@ char* read(SOCKET s){
   return p;
 }
 
-void checkNoError(SOCKET s){
+int checkNoError(SOCKET s){
   write(s, "ERR?");
-  char* b = read(s);
+  const char* b = read(s);
+  if (!b) return 0;
   if (!strcmp(b, "NO_ERROR"))
-    return;
+    return 1;
   fprintf(stderr, "%s\n", b);
   exit(EXIT_FAILURE);
 }
 
-char* writeRead(SOCKET s, const char* cmd){
-  write(s, cmd);
+const char* writeRead(SOCKET s, const char* cmd){
+  if (!write(s, cmd))
+    return NULL;
   return read(s);
 }
 
-char readChar(SOCKET s){
+char readChar(SOCKET s){ // TBD fail reporting
   char c;
   while (1){
     int n = recv(s, &c, 1, 0);
@@ -245,45 +257,14 @@ char* readBinary(SOCKET s, size_t* nBytes){
   return buf;
 }
 
-extern "C" void* tcpThread(void* p){
-  An_Image_Window* w = (An_Image_Window*) p;
-  /***********************************************/
-  /* create a socket */
-  /***********************************************/
-  SOCKET s;  
-  s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s == INVALID_SOCKET) fail("socket(): INVALID_SOCKET");
-  
-  /***********************************************
-   * turn off Nagle's algorithm, set immediate writing
-   * as commands have side effects in realtime
-   ***********************************************/
-  int flag = 1;
-  int result = setsockopt(s,            /* socket affected */
-			  IPPROTO_TCP,     /* set option at TCP level */
-			  TCP_NODELAY,     /* name of option */
-			  (char *) &flag,  /* the cast is historical cruft */
-			  sizeof(int));    /* length of option value */
-  if (result < 0) fail("setsockopts");
-  #if 0
-  struct timeval timeout;      
-  timeout.tv_sec = 3;
-  timeout.tv_usec = 0;
-  
-  if (setsockopt (s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout) < 0)
-    fail("setsockopt (RCVTIMEO)\n");
-  
-  if (setsockopt (s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof timeout) < 0)
-    fail("setsockopt (SNDTIMEO)\n");
-#endif  
+void tcpThread_connect(SOCKET s, const char* ipAddr, unsigned short port){
   /***********************************************/
   /* connect socket to given address */
   /***********************************************/
   struct sockaddr_in peeraddr_in;
   memset(&peeraddr_in, 0, sizeof(struct sockaddr_in));  
-  peeraddr_in.sin_addr.s_addr = inet_addr("192.168.178.172");
+  peeraddr_in.sin_addr.s_addr = inet_addr(ipAddr); // 92/172
   peeraddr_in.sin_family = AF_INET;
-  unsigned short port = 76;
   peeraddr_in.sin_port = htons(port);
   
   if (connect(s, (const struct sockaddr*)&peeraddr_in,
@@ -291,50 +272,90 @@ extern "C" void* tcpThread(void* p){
     fail("connect");
   }
   printf("connected\n"); fflush(stdout);
-  checkNoError(s);
+
+}
+int tcpThread_loadImage(An_Image_Window* w, SOCKET s){
+  if (!write(s, "CAM:CAPT?")) return 0;
+  size_t nBytes;
+  char* b = readBinary(s, &nBytes);
+  if (!b)
+    return 0;
   
-  size_t count = 0;
+  size_t jpegSize;
+  int actualComps;    
+  int newWidth;
+  int newHeight;
+  unsigned char* newPImg = jpgd::decompress_jpeg_image_from_memory((unsigned char*)b, /*data size*/nBytes, &newWidth, &newHeight, &actualComps, /*req_comps*/3);
+  assert(actualComps == 3);
+  if (!newPImg)
+    return 0;
+  
+  Fl::lock();
+  unsigned char* prevImg = w->pImg; // store for free outside lock
+  w->jpegWidth = newWidth;
+  w->jpegHeight = newHeight;
+  w->pImg = newPImg;
+  Fl::unlock();
+  jpgd::jpgd_free(prevImg); // free outside lock
+  
+  // === notify main thread ===
+  Fl::awake(w);
+  
+  free(b);
+  return 1;
+}
+
+extern "C" void* tcpThread(void* p){
+  An_Image_Window* w = (An_Image_Window*) p;
   while (1){
+    /***********************************************/
+    /* create a socket */
+    /***********************************************/
+    SOCKET s;  
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET) fail("socket(): INVALID_SOCKET");
+    
+    /***********************************************
+     * turn off Nagle's algorithm, set immediate writing
+     * as commands have side effects in realtime
+     ***********************************************/
+    int flag = 1;
+    int result = setsockopt(s,            /* socket affected */
+			    IPPROTO_TCP,     /* set option at TCP level */
+			    TCP_NODELAY,     /* name of option */
+			    (char *) &flag,  /* the cast is historical cruft */
+			    sizeof(int));    /* length of option value */
+    if (result < 0) fail("setsockopts");
 #if 1
-    write(s, "CAM:CAPT?");
-    size_t nBytes;
-    char* b = readBinary(s, &nBytes);
+    struct timeval timeout;      
+    timeout.tv_sec = 3;
+    timeout.tv_usec = 0;
     
-    size_t jpegSize;
-    int actualComps;    
-    int newWidth;
-    int newHeight;
-    //printf("decomp...\n", count++); fflush(stdout);
-    unsigned char* newPImg = jpgd::decompress_jpeg_image_from_memory((unsigned char*)b, /*data size*/nBytes, &newWidth, &newHeight, &actualComps, /*req_comps*/3);
-    assert(actualComps == 3);
-    //printf("... decomp done %i\n", count++); fflush(stdout);
-    if (newPImg){
-      Fl::lock();
-      unsigned char* prevImg = w->pImg; // store for free outside lock
-      w->jpegWidth = newWidth;
-      w->jpegHeight = newHeight;
-      w->pImg = newPImg;
-      Fl::unlock();
-      jpgd::jpgd_free(prevImg); // free outside lock
-    } else {
-      printf("%i\t%i\n", newWidth, newHeight);
-      jpgd::jpgd_free(newPImg); // DEBUG only
-      
-      //      fail("jpeg decode");
-    }
-    #else
-    checkNoError(s);
-    printf("... tick %i\n", count++); fflush(stdout);
-    char* b = NULL;
+    if (setsockopt (s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout) < 0)
+      fail("setsockopt (RCVTIMEO)\n");
     
+    if (setsockopt (s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof timeout) < 0)
+      fail("setsockopt (SNDTIMEO)\n");
 #endif
-    
-    // === notify main thread ===
-    //printf("%i\n", count++); fflush(stdout);
-    Fl::awake(w);
- 
-    free(b);
-  }  
+    tcpThread_connect(s, "192.168.178.92", /*port*/76);
+    if (!checkNoError(s))
+      goto disconnect;
+    while (1){
+      if (!tcpThread_loadImage(w, s))
+	goto disconnect;
+    }
+  disconnect:
+    printf("disconnect\n");
+    close(s);
+  } // endless loop
+  
+#if 0
+  int count2 = 0;
+  while(1){
+    checkNoError(s);
+    printf("... tick %i\n", count2++); fflush(stdout);
+  }
+#endif
 }
 
 
