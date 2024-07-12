@@ -7,4 +7,5 @@ idf_component_register(SRCS "main.c"
 		       REQUIRES ethernet_init
 		       PRIV_REQUIRES driver
 		       PRIV_REQUIRES esp_psram
+		       PRIV_REQUIRES esp_wifi
 )

@@ -89,6 +89,7 @@ static dispatcherEntry_t dispEntriesRootLevel[] = {
   {.key=NULL, .handlerPrefix=NULL, .handlerDoSet=NULL, .handlerGet=NULL, .payload=NULL} // end marker
 };
 
+#include "esp_wifi.h" // for RSSI
 void app_main(void){
   // === install interrupt-based UART driver ===
   // enables blocking read
@@ -118,15 +119,15 @@ void app_main(void){
   esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
 
   // === initialize subsystems ===
-  nvsMan_init(&nvsMan);
-  camera_init();
-  //ADC_init();
-  //PWM_init();
-
   // Initialize TCP/IP network interface aka the esp-netif (should be called only once in application)
   ESP_ERROR_CHECK(esp_netif_init());
   // Create default event loop that running in background
   ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+  nvsMan_init(&nvsMan);
+  int has_wifi = WIFI_init();
+  //ADC_init();
+  //PWM_init();
 
   goto skip_ETH; // !!!
   { // ETH scope
@@ -184,7 +185,7 @@ void app_main(void){
   } // ETH scope
  skip_ETH:
   
-  if (WIFI_init()){
+  if (has_wifi){
     // === start TCP/IP server threads on WIFI ===
     uint32_t myIpAddr = WIFI_getIp();
     for (size_t ixConn = 0; ixConn < NCONNMAX; ++ixConn){
@@ -192,12 +193,12 @@ void app_main(void){
 	dpConnEthArgs_init(&etArgs[ixConn], &ethDispatchers[ixConn], /*port*/connPort[ixConn], myIpAddr, /*userArg*/NULL, &dispEntriesRootLevel[0]);
 	dispatcher_init(&ethDispatchers[ixConn], /*appObj*/NULL, dpConnEth_write, dpConnEth_read, (void*)&etArgs[ixConn]);
 	
-	int ret = xTaskCreatePinnedToCore(dpConnEth_task, "eth", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY+1, NULL, portNUM_PROCESSORS - 1);
+	int ret = xTaskCreatePinnedToCore(dpConnEth_task, "wifi", /*stack*/4096, (void*)&etArgs[ixConn], tskIDLE_PRIORITY+1, NULL, portNUM_PROCESSORS - 1);
 	if (ret != pdPASS) {
 	  ESP_LOGE(TAG, "failed to create WIFI task");
 	  ESP_ERROR_CHECK(ESP_FAIL);
 	}
-      } // if ETH
+      } // if connmode WIFI
     } // for conn
   } // if WIFI (fixme, need IF_UP/IF_DOWN handler)  
   
@@ -213,8 +214,17 @@ void app_main(void){
     ESP_ERROR_CHECK(ESP_FAIL);
   }
     
+  camera_init();
   while (1){
+    int rssi;
+    if (has_wifi){
+      if (esp_wifi_sta_get_rssi(&rssi) != ESP_OK){
+	ESP_LOGE(TAG, "rssi get failed");
+      } else {
+	ESP_LOGI(TAG, "rssi: %i dB\n", rssi);    
+      }
+    }
     ESP_LOGI(TAG, "zzz");
-    vTaskDelay(10000/portTICK_PERIOD_MS);
+    vTaskDelay(1000/portTICK_PERIOD_MS);
   }
 }
